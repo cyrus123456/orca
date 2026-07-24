@@ -31,6 +31,7 @@ import { isPwshAvailable } from '../pwsh'
 import { isHostCodexHomeForWsl, isWslCodexHomeForHost } from '../pty/codex-home-wsl-env'
 import { removeInheritedNoColor } from '../pty/terminal-color-env'
 import { removeAppImageRuntimeEnv } from '../pty/appimage-terminal-env'
+import { stripInheritedBuildModeEnv } from '../pty/build-mode-env'
 import { parseWslPath } from '../wsl'
 import { addWslEnvKeys } from '../wsl-env'
 import {
@@ -53,6 +54,7 @@ import {
   recognizeAgentProcess,
   recognizeAgentProcessFromCommandLine
 } from '../../shared/agent-process-recognition'
+import { shouldInspectOuterWrapperForegroundProcess } from '../../shared/foreground-wrapper-agent'
 import {
   shouldUseShellReadyStartupDelivery,
   type StartupCommandDelivery
@@ -82,6 +84,11 @@ const PTY_SPAWN_HEALTH_TIMEOUT_MS = 4_000
 // Why: retry once so a transient slow spawn doesn't route every terminal to the local fallback, losing daemon persistence.
 const PTY_SPAWN_HEALTH_RETRY_ATTEMPTS = 2
 const PENDING_PRE_LISTENER_DATA_MAX_CHARS = 512 * 1024
+
+function shouldInspectOuterWrapperFallback(processName: string | null): boolean {
+  const recognized = recognizeAgentProcess(processName)
+  return recognized !== null && shouldInspectOuterWrapperForegroundProcess(recognized)
+}
 
 function composeGuardedDaemonGitConfigEnv(
   env: Record<string, string>,
@@ -554,7 +561,7 @@ function spawnDaemonPtyWithWindowsFallback(args: {
 export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandle {
   const size = normalizePtySize(opts.cols, opts.rows)
   const env: Record<string, string> = {
-    ...mergeGitConfigEnvProtocol(process.env, opts.env),
+    ...mergeGitConfigEnvProtocol(stripInheritedBuildModeEnv(process.env), opts.env),
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     TERM_PROGRAM: 'Orca',
@@ -884,6 +891,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
     fallbackProcess !== null &&
     (isShellProcess(fallbackProcess) ||
       isAgentForegroundWrapperProcess(fallbackProcess) ||
+      shouldInspectOuterWrapperFallback(fallbackProcess) ||
       // Why: agent-spawned helpers can become the PTY foreground child, but the Unix process tree still identifies the parent agent.
       process.platform !== 'win32')
   const scheduleAgentForegroundRefresh = (fallbackProcess: string | null): void => {
@@ -891,9 +899,11 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       return
     }
     const fallbackIsShell = fallbackProcess !== null && isShellProcess(fallbackProcess)
+    const fallbackRecognition = recognizeAgentProcess(fallbackProcess)
     if (
       !fallbackProcess ||
-      recognizeAgentProcess(fallbackProcess) ||
+      (fallbackRecognition !== null &&
+        !shouldInspectOuterWrapperForegroundProcess(fallbackRecognition)) ||
       !shouldInspectFallbackForegroundProcess(fallbackProcess)
     ) {
       return
@@ -991,7 +1001,11 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       }
       try {
         const fallbackProcess = getFallbackForegroundProcess()
-        if (fallbackProcess && recognizeAgentProcess(fallbackProcess)) {
+        const fallbackRecognition = recognizeAgentProcess(fallbackProcess)
+        const inspectOuterWrapper =
+          fallbackRecognition !== null &&
+          shouldInspectOuterWrapperForegroundProcess(fallbackRecognition)
+        if (fallbackProcess && fallbackRecognition && !inspectOuterWrapper) {
           cachedAgentForeground = { processName: fallbackProcess, refreshedAt: Date.now() }
           startupAgentForeground = null
           return fallbackProcess
@@ -1010,6 +1024,7 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
           cachedAgentForeground &&
           fallbackProcess !== null &&
           (isAgentForegroundWrapperProcess(fallbackProcess) ||
+            inspectOuterWrapper ||
             (process.platform === 'win32' && isShellProcess(fallbackProcess)))
         ) {
           return cachedAgentForeground.processName
@@ -1029,9 +1044,12 @@ export function createPtySubprocess(opts: PtySubprocessOptions): SubprocessHandl
       }
       try {
         const fallbackProcess = getFallbackForegroundProcess()
+        const fallbackRecognition = recognizeAgentProcess(fallbackProcess)
         if (
           !fallbackProcess ||
-          (recognizeAgentProcess(fallbackProcess) && process.platform !== 'win32') ||
+          (fallbackRecognition !== null &&
+            process.platform !== 'win32' &&
+            !shouldInspectOuterWrapperForegroundProcess(fallbackRecognition)) ||
           (process.platform !== 'win32' && !shouldInspectFallbackForegroundProcess(fallbackProcess))
         ) {
           return fallbackProcess

@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import type { GlobalSettings } from '../../shared/types'
+import type { CodexRateLimitAccountsState, GlobalSettings } from '../../shared/types'
 import { buildWslCodexAvailabilityArgs, buildWslCodexLoginArgs } from './wsl-codex-command'
 import type { readHookTrustEntries as ReadHookTrustEntries } from '../codex/config-toml-trust'
 
@@ -938,6 +938,179 @@ describe('CodexAccountService config sync', () => {
     warnSpy.mockRestore()
   })
 
+  it.each([
+    {
+      label: 'the active account',
+      accountId: 'account-1',
+      outcome: 'success',
+      expectedActiveAccountId: 'account-1',
+      expectedUpdateCount: 2
+    },
+    {
+      label: 'a different account',
+      accountId: 'account-2',
+      outcome: 'success',
+      expectedActiveAccountId: 'account-1',
+      expectedUpdateCount: 2
+    },
+    {
+      label: 'a login that fails',
+      accountId: 'account-1',
+      outcome: 'login-failure',
+      expectedActiveAccountId: null,
+      expectedUpdateCount: 1
+    },
+    {
+      label: 'credentials rejected by runtime validation',
+      accountId: 'account-1',
+      outcome: 'runtime-validation-failure',
+      expectedActiveAccountId: null,
+      expectedUpdateCount: 3
+    }
+  ])('keeps host selection semantics when reauthenticating $label', async (testCase) => {
+    vi.resetModules()
+
+    const hostAccounts = ['account-1', 'account-2'].map((id, index) => ({
+      id,
+      email: `${id}@example.com`,
+      managedHomePath: createManagedHome(
+        testState.userDataDir,
+        id,
+        '',
+        createCodexAuthJson(`${id}@example.com`, `provider-${id}`, `refresh-${id}`)
+      ),
+      providerAccountId: `provider-${id}`,
+      workspaceLabel: null,
+      workspaceAccountId: `provider-${id}`,
+      createdAt: index + 1,
+      updatedAt: index + 1,
+      lastAuthenticatedAt: index + 1
+    }))
+    const wslAccount = {
+      id: 'account-wsl',
+      email: 'account-wsl@example.com',
+      managedHomePath: createManagedHome(
+        testState.userDataDir,
+        'account-wsl',
+        '',
+        createCodexAuthJson('account-wsl@example.com', 'provider-wsl', 'refresh-wsl')
+      ),
+      managedHomeRuntime: 'wsl' as const,
+      wslDistro: 'Ubuntu',
+      wslLinuxHomePath: '/home/test/.local/share/orca/codex-accounts/account-wsl/home',
+      providerAccountId: 'provider-wsl',
+      workspaceLabel: null,
+      workspaceAccountId: 'provider-wsl',
+      createdAt: 3,
+      updatedAt: 3,
+      lastAuthenticatedAt: 3
+    }
+    const settings = createSettings({
+      codexManagedAccounts: [...hostAccounts, wslAccount],
+      activeCodexManagedAccountId: 'account-1',
+      activeCodexManagedAccountIdsByRuntime: {
+        host: 'account-1',
+        wsl: { Ubuntu: 'account-wsl' }
+      }
+    })
+    const store = createStore(settings)
+    const runtimeHome = createRuntimeHome()
+    const spawnMock = vi.fn(
+      (_command: string, _args: string[], options: { env: NodeJS.ProcessEnv }) => {
+        const child = new EventEmitter() as EventEmitter & {
+          stdout: PassThrough
+          stderr: PassThrough
+          kill: () => void
+        }
+        child.stdout = new PassThrough()
+        child.stderr = new PassThrough()
+        child.kill = vi.fn()
+        const current = store.getSettings()
+        store.updateSettings({
+          activeCodexManagedAccountId: null,
+          activeCodexManagedAccountIdsByRuntime: {
+            ...current.activeCodexManagedAccountIdsByRuntime!,
+            host: null,
+            wsl: { Ubuntu: null }
+          }
+        })
+        if (testCase.outcome === 'login-failure') {
+          queueMicrotask(() => child.emit('close', 1))
+          return child
+        }
+        writeFileSync(
+          join(options.env.CODEX_HOME!, 'auth.json'),
+          createCodexAuthJson('reauthenticated@example.com', 'provider-new', 'refresh-new'),
+          'utf-8'
+        )
+        queueMicrotask(() => child.emit('close', 0))
+        return child
+      }
+    )
+    vi.doMock('node:child_process', () => ({
+      execFileSync: vi.fn(),
+      spawn: spawnMock
+    }))
+    vi.doMock('../codex-cli/command', () => ({
+      resolveCodexCommand: () => 'codex'
+    }))
+
+    runtimeHome.syncForCurrentSelection.mockImplementation(() => {
+      if (testCase.outcome !== 'runtime-validation-failure') {
+        return
+      }
+      const current = store.getSettings()
+      store.updateSettings({
+        activeCodexManagedAccountId: null,
+        activeCodexManagedAccountIdsByRuntime: {
+          ...current.activeCodexManagedAccountIdsByRuntime!,
+          host: null
+        }
+      })
+    })
+    const rateLimits = createRateLimits()
+    const { CodexAccountService } = await import('./service')
+    const service = new CodexAccountService(
+      store as never,
+      rateLimits as never,
+      runtimeHome as never
+    )
+
+    let result: CodexRateLimitAccountsState | null = null
+    if (testCase.outcome === 'login-failure') {
+      await expect(service.reauthenticateAccount(testCase.accountId)).rejects.toThrow(
+        'Codex login exited with code 1.'
+      )
+    } else {
+      result = await service.reauthenticateAccount(testCase.accountId)
+    }
+
+    expect(result?.activeAccountId ?? null).toBe(testCase.expectedActiveAccountId)
+    if (result) {
+      expect(result.activeAccountIdsByRuntime).toEqual({
+        host: testCase.expectedActiveAccountId,
+        wsl: { Ubuntu: null }
+      })
+    }
+    expect(store.getSettings()).toMatchObject({
+      activeCodexManagedAccountId: testCase.expectedActiveAccountId,
+      activeCodexManagedAccountIdsByRuntime: {
+        host: testCase.expectedActiveAccountId,
+        wsl: { Ubuntu: null }
+      }
+    })
+    const completedLogin = testCase.outcome !== 'login-failure'
+    expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalledTimes(completedLogin ? 1 : 0)
+    if (completedLogin) {
+      expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalledWith({ runtime: 'host' })
+      expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalledWith(undefined, {
+        runtime: 'host'
+      })
+    }
+    expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalledTimes(completedLogin ? 1 : 0)
+    expect(store.updateSettings).toHaveBeenCalledTimes(testCase.expectedUpdateCount)
+  })
+
   it('does not recreate a missing managed home at a different account path', async () => {
     vi.resetModules()
     const managedHomePath = join(testState.userDataDir, 'codex-accounts', 'other-account', 'home')
@@ -1252,6 +1425,7 @@ describe('CodexAccountService config sync', () => {
       }
       return ''
     })
+    let clearSelectionDuringLogin = (): void => {}
     const spawnMock = vi.fn((command: string, args: string[]) => {
       expect(command).toBe('wsl.exe')
       expect(args).toEqual(buildWslCodexLoginArgs('Ubuntu', wslLinuxHomePath))
@@ -1263,6 +1437,7 @@ describe('CodexAccountService config sync', () => {
       child.stdout = new PassThrough()
       child.stderr = new PassThrough()
       child.kill = vi.fn()
+      clearSelectionDuringLogin()
       writeFileSync(
         join(wslManagedHomePath, 'auth.json'),
         JSON.stringify({
@@ -1307,9 +1482,22 @@ describe('CodexAccountService config sync', () => {
           lastAuthenticatedAt: 1
         }
       ],
-      activeCodexManagedAccountId: 'account-1'
+      activeCodexManagedAccountId: null,
+      activeCodexManagedAccountIdsByRuntime: {
+        host: null,
+        wsl: { Ubuntu: 'account-1' }
+      }
     })
     const store = createStore(settings)
+    clearSelectionDuringLogin = () => {
+      const current = store.getSettings()
+      store.updateSettings({
+        activeCodexManagedAccountIdsByRuntime: {
+          ...current.activeCodexManagedAccountIdsByRuntime!,
+          wsl: { Ubuntu: null }
+        }
+      })
+    }
     const rateLimits = createRateLimits()
     const runtimeHome = createRuntimeHome()
 
@@ -1328,7 +1516,20 @@ describe('CodexAccountService config sync', () => {
         managedHomeRuntime: 'wsl',
         wslDistro: 'Ubuntu'
       })
-      expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalled()
+      expect(result.activeAccountId).toBe(null)
+      expect(result.activeAccountIdsByRuntime).toEqual({
+        host: null,
+        wsl: { Ubuntu: 'account-1' }
+      })
+      expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalledWith({
+        runtime: 'wsl',
+        wslDistro: 'Ubuntu'
+      })
+      expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalledWith(undefined, {
+        runtime: 'wsl',
+        wslDistro: 'Ubuntu'
+      })
+      expect(store.updateSettings).toHaveBeenCalledTimes(2)
     } finally {
       Object.defineProperty(process, 'platform', {
         configurable: true,
@@ -1555,12 +1756,14 @@ describe('CodexAccountService config sync', () => {
     const store = createStore(settings)
     const rateLimits = createRateLimits()
     const runtimeHome = createRuntimeHome()
+    const onHostSystemDefaultSelected = vi.fn()
 
     const { CodexAccountService } = await import('./service')
     const service = new CodexAccountService(
       store as never,
       rateLimits as never,
-      runtimeHome as never
+      runtimeHome as never,
+      { onHostSystemDefaultSelected }
     )
 
     const result = await service.selectAccount(null)
@@ -1568,6 +1771,7 @@ describe('CodexAccountService config sync', () => {
     expect(result.activeAccountId).toBe(null)
     expect(runtimeHome.syncForCurrentSelection).toHaveBeenCalled()
     expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalled()
+    expect(onHostSystemDefaultSelected).toHaveBeenCalledOnce()
   })
 
   it('selectAccount immediately rewrites the shared runtime auth for existing terminals', async () => {
@@ -2380,6 +2584,190 @@ describe('CodexAccountService config sync', () => {
       expect(readFileSync(systemAuthPath(), 'utf-8')).toBe(systemAuth)
       const state = withoutEnvApiKey(() => service.listAccounts())
       expect(state.systemDefault?.email).toBe('real@home.dev')
+    })
+  })
+
+  // Why: quota probes against a cold per-account CODEX_HOME can take 10–25s
+  // (RPC + PTY fallback) and queue behind an in-flight global usage refresh;
+  // account mutations must never block on — or fail because of — that probe.
+  describe('quota refresh decoupling', () => {
+    function createAccountOneSettings(): GlobalSettings {
+      const managedHomePath = createManagedHome(
+        testState.userDataDir,
+        'account-1',
+        '',
+        '{"account":"managed"}\n'
+      )
+      return createSettings({
+        codexManagedAccounts: [
+          {
+            id: 'account-1',
+            email: 'user@example.com',
+            managedHomePath,
+            providerAccountId: null,
+            workspaceLabel: null,
+            workspaceAccountId: null,
+            createdAt: 1,
+            updatedAt: 1,
+            lastAuthenticatedAt: 1
+          }
+        ]
+      })
+    }
+
+    async function expectResolvesPromptly<T>(promise: Promise<T>, label: string): Promise<T> {
+      let timer: NodeJS.Timeout | undefined
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error(`${label} blocked on the quota refresh`)),
+              2_000
+            )
+          })
+        ])
+      } finally {
+        clearTimeout(timer)
+      }
+    }
+
+    function createLoginSpawnMock() {
+      return vi.fn((_command: string, _args: string[], options: { env: NodeJS.ProcessEnv }) => {
+        const child = new EventEmitter() as EventEmitter & {
+          stdout: PassThrough
+          stderr: PassThrough
+          kill: () => void
+        }
+        child.stdout = new PassThrough()
+        child.stderr = new PassThrough()
+        child.kill = vi.fn()
+        writeFileSync(
+          join(options.env.CODEX_HOME!, 'auth.json'),
+          createCodexAuthJson('user@example.com', 'provider-account-1', 'refresh-token'),
+          'utf-8'
+        )
+        queueMicrotask(() => child.emit('close', 0))
+        return child
+      })
+    }
+
+    it('resolves selectAccount while the quota refresh never settles', async () => {
+      const store = createStore(createAccountOneSettings())
+      const rateLimits = {
+        refreshForCodexAccountChange: vi.fn(() => new Promise<never>(() => {})),
+        evictInactiveCodexCache: vi.fn()
+      }
+      const runtimeHome = createRuntimeHome()
+
+      const { CodexAccountService } = await import('./service')
+      const service = new CodexAccountService(
+        store as never,
+        rateLimits as never,
+        runtimeHome as never
+      )
+
+      const state = await expectResolvesPromptly(
+        service.selectAccount('account-1'),
+        'selectAccount'
+      )
+
+      expect(state.activeAccountId).toBe('account-1')
+      expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('resolves selectAccount when the quota refresh rejects', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const store = createStore(createAccountOneSettings())
+      const rateLimits = {
+        refreshForCodexAccountChange: vi.fn().mockRejectedValue(new Error('cold probe failed')),
+        evictInactiveCodexCache: vi.fn()
+      }
+      const runtimeHome = createRuntimeHome()
+
+      const { CodexAccountService } = await import('./service')
+      const service = new CodexAccountService(
+        store as never,
+        rateLimits as never,
+        runtimeHome as never
+      )
+
+      const state = await service.selectAccount('account-1')
+
+      expect(state.activeAccountId).toBe('account-1')
+      await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled())
+      errorSpy.mockRestore()
+    })
+
+    it('resolves addAccount while the post-login quota refresh never settles', async () => {
+      vi.resetModules()
+      writeFileSync(
+        join(testState.fakeHomeDir, '.codex', 'config.toml'),
+        'approval_policy = "never"\n',
+        'utf-8'
+      )
+      const spawnMock = createLoginSpawnMock()
+      vi.doMock('node:child_process', () => ({ execFileSync: vi.fn(), spawn: spawnMock }))
+      vi.doMock('../codex-cli/command', () => ({ resolveCodexCommand: () => 'codex' }))
+
+      const store = createStore(createSettings())
+      const rateLimits = {
+        refreshForCodexAccountChange: vi.fn(() => new Promise<never>(() => {})),
+        evictInactiveCodexCache: vi.fn()
+      }
+      const runtimeHome = createRuntimeHome()
+
+      const { CodexAccountService } = await import('./service')
+      const service = new CodexAccountService(
+        store as never,
+        rateLimits as never,
+        runtimeHome as never
+      )
+
+      const state = await expectResolvesPromptly(service.addAccount(), 'addAccount')
+
+      expect(state.accounts).toHaveLength(1)
+      expect(state.accounts[0].email).toBe('user@example.com')
+      expect(rateLimits.refreshForCodexAccountChange).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the new account and its managed home when the post-login quota refresh rejects', async () => {
+      vi.resetModules()
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      writeFileSync(
+        join(testState.fakeHomeDir, '.codex', 'config.toml'),
+        'approval_policy = "never"\n',
+        'utf-8'
+      )
+      const spawnMock = createLoginSpawnMock()
+      vi.doMock('node:child_process', () => ({ execFileSync: vi.fn(), spawn: spawnMock }))
+      vi.doMock('../codex-cli/command', () => ({ resolveCodexCommand: () => 'codex' }))
+
+      const store = createStore(createSettings())
+      const rateLimits = {
+        refreshForCodexAccountChange: vi.fn().mockRejectedValue(new Error('cold probe failed')),
+        evictInactiveCodexCache: vi.fn()
+      }
+      const runtimeHome = createRuntimeHome()
+
+      const { CodexAccountService } = await import('./service')
+      const service = new CodexAccountService(
+        store as never,
+        rateLimits as never,
+        runtimeHome as never
+      )
+
+      const state = await service.addAccount()
+
+      expect(state.accounts).toHaveLength(1)
+      const account = store.getSettings().codexManagedAccounts[0]
+      expect(account.email).toBe('user@example.com')
+      // The durable mutation must survive a failed usage probe — previously the
+      // rejection fell into login cleanup and deleted the just-created home.
+      expect(existsSync(account.managedHomePath)).toBe(true)
+      expect(existsSync(join(account.managedHomePath, 'auth.json'))).toBe(true)
+      await vi.waitFor(() => expect(errorSpy).toHaveBeenCalled())
+      errorSpy.mockRestore()
     })
   })
 })
