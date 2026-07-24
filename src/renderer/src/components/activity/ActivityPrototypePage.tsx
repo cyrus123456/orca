@@ -1516,7 +1516,13 @@ export default function ActivityPrototypePage(): React.JSX.Element {
     selectedThread &&
     displayedThread &&
     displayedThread.worktree.id === selectedThread.worktree.id &&
-    displayedThread.tab.id === selectedThread.tab.id
+    displayedThread.tab.id === selectedThread.tab.id &&
+    // Why: the Activity portal targets a specific pane/leaf, so two panes of the
+    // same tab are distinct here. Comparing only worktree+tab conflated them, so
+    // stagedThread stayed null, the staged-swap never advanced displayedPaneKey,
+    // and the readiness MutationObserver oscillated loading<->unavailable forever
+    // (React #185, crash 36e6237d). Distinguish panes by paneKey.
+    displayedThread.paneKey === selectedThread.paneKey
   const visibleThread =
     selectedThread && selectedHasLiveTab
       ? displayedThread && displayedHasLiveTab && displayedThread.paneKey !== selectedThread.paneKey
