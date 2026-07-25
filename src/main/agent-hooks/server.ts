@@ -851,7 +851,7 @@ export class AgentHookServer {
       this.state.lastStatusByPaneKey.set(enriched.paneKey, enriched)
       this.scheduleStatusPersist()
       this.notifyStatusChangeListeners()
-      this.onAgentStatus?.(enriched)
+      this.emitEnrichedStatus(enriched)
       return enriched
     }
     const stateReconciledPayload =
@@ -963,6 +963,13 @@ export class AgentHookServer {
     this.state.lastStatusByPaneKey.set(enriched.paneKey, enriched)
     this.scheduleStatusPersist()
     this.notifyStatusChangeListeners()
+    this.emitEnrichedStatus(enriched)
+    return enriched
+  }
+
+  // Why: every status emit must reach plugins too, so a new early-return path
+  // upstream cannot silently leave the plugin tap behind the main-window fanout.
+  private emitEnrichedStatus(enriched: EnrichedAgentHookEventPayload): void {
     this.onAgentStatus?.(enriched)
     for (const listener of this.enrichedStatusListeners) {
       try {
@@ -971,7 +978,6 @@ export class AgentHookServer {
         console.error('[agent-hooks] enriched status listener threw', err)
       }
     }
-    return enriched
   }
 
   private clearAssistantMessageRetry(paneKey: string): void {
