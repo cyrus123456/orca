@@ -182,9 +182,11 @@ export function attachWebgl(pane: ManagedPaneInternal): void {
       // Census rides along: a GPU-process death loses every pane's context at
       // once, and the crash-report ring coalesces repeats, so the count has to
       // be in the payload rather than in the number of crumbs.
+      const census = getLivePaneCensus()
       recordTerminalWebglDiagnostic('webgl-context-loss', {
         paneId: pane.id,
-        ...getLivePaneCensus()
+        livePanes: census.panes,
+        livePaneManagers: census.managers
       })
       // Why: Chromium starts reclaiming terminal contexts under pressure.
       // Recreating WebGL for this pane can loop context loss and leave xterm
