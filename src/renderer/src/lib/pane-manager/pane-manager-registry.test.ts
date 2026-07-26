@@ -205,6 +205,19 @@ describe('pane manager registry', () => {
     expect(getLivePaneCensus()).toEqual({ managers: 1, panes: 1 })
   })
 
+  it('prefers the allocation-free pane count when a manager exposes one', () => {
+    const counted = {
+      resetWebglTextureAtlases: vi.fn<() => void>(),
+      getPaneCount: () => 4,
+      getPanes: vi.fn(() => [{ id: 1, terminal: {} }])
+    }
+    registerLivePaneManager(counted)
+    registeredManagers.push(counted)
+
+    expect(getLivePaneCensus()).toEqual({ managers: 1, panes: 4 })
+    expect(counted.getPanes).not.toHaveBeenCalled()
+  })
+
   it('counts surviving managers when one throws mid-teardown', () => {
     const broken = {
       resetWebglTextureAtlases: vi.fn<() => void>(),

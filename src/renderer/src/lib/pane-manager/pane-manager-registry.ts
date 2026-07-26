@@ -7,6 +7,7 @@ type RegisteredPaneManager = {
   refreshAllPanes?: () => void
   getRenderingDiagnostics?: () => PaneRenderingDiagnostics[]
   getPanes?: () => { id: number; terminal: unknown }[]
+  getPaneCount?: () => number
 }
 
 const liveManagers = new Set<RegisteredPaneManager>()
@@ -101,7 +102,7 @@ export function getLivePaneCensus(): { managers: number; panes: number } {
   let panes = 0
   for (const manager of liveManagers) {
     try {
-      panes += manager.getPanes?.().length ?? 0
+      panes += manager.getPaneCount?.() ?? manager.getPanes?.().length ?? 0
     } catch {
       // Why: a manager mid-teardown must not sink the count for the rest.
     }
