@@ -124,4 +124,68 @@ describe('crash breadcrumb store', () => {
 
     vi.useRealTimers()
   })
+
+  // Windows crash F0BKR84AHEH: two `terminal_safe_fit_retry_exhausted` bursts
+  // (34 crumbs in 76ms, 34 in 56ms) flushed the pre-crash trail out of a
+  // 30-entry ring. Every hidden pane is display:none, so it measures 0x0, fails
+  // the fit thresholds, and burns its whole retry budget — one reattach wave
+  // fires once per mounted pane, near-simultaneously. These two cases pin the
+  // before/after so the coalescing in crash-reporting.ts cannot silently regress.
+  describe('a per-pane burst against the fixed-size ring', () => {
+    const recordPreCrashTrail = (): void => {
+      for (let index = 0; index < 10; index += 1) {
+        recordCrashBreadcrumb(`pre_crash_evidence_${index}`, { index })
+      }
+    }
+    const burstSize = 34
+
+    it('erases the entire pre-crash trail when uncoalesced', () => {
+      recordPreCrashTrail()
+      for (let pane = 0; pane < burstSize; pane += 1) {
+        recordCrashBreadcrumb('terminal_safe_fit_retry_exhausted', { paneId: 1 })
+      }
+
+      const snapshot = getCrashBreadcrumbSnapshot()
+
+      expect(snapshot.filter((entry) => entry.name.startsWith('pre_crash_evidence_'))).toHaveLength(
+        0
+      )
+      expect(
+        snapshot.filter((entry) => entry.name === 'terminal_safe_fit_retry_exhausted')
+      ).toHaveLength(30)
+    })
+
+    it('costs one slot when coalesced, and keeps the pane count on the payload', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      recordPreCrashTrail()
+      for (let pane = 0; pane < burstSize; pane += 1) {
+        vi.advanceTimersByTime(2)
+        recordCoalescedCrashBreadcrumb({
+          name: 'terminal_safe_fit_retry_exhausted',
+          data: {
+            paneId: 1,
+            leafId: `2222222${pane}-2222-4222-8222-222222222222`,
+            livePanes: burstSize,
+            livePaneManagers: burstSize
+          },
+          coalesceKey: 'terminal_safe_fit_retry_exhausted',
+          minIntervalMs: 30_000
+        })
+      }
+
+      const snapshot = getCrashBreadcrumbSnapshot()
+      const bursts = snapshot.filter((entry) => entry.name === 'terminal_safe_fit_retry_exhausted')
+
+      expect(snapshot.filter((entry) => entry.name.startsWith('pre_crash_evidence_'))).toHaveLength(
+        10
+      )
+      expect(bursts).toHaveLength(1)
+      // The population survives even though 33 crumbs did not — that count was
+      // the only signal the multiplicity ever carried.
+      expect(bursts[0].data).toEqual(
+        expect.objectContaining({ livePanes: burstSize, livePaneManagers: burstSize })
+      )
+    })
+  })
 })
