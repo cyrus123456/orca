@@ -71,6 +71,13 @@ export function recordCoalescedCrashBreadcrumb({
   const previous = coalescedBreadcrumbs.get(coalesceKey)
   if (previous && now - previous.recordedAt < minIntervalMs) {
     previous.suppressed += 1
+    // Re-anchor recency without touching recordedAt: a suppressed key is the
+    // hottest key in the map, but only the emit path below moves position, so
+    // a continuously-suppressed key would keep its original slot and be first
+    // out under high-cardinality churn. recordedAt stays put so the suppression
+    // window still expires on schedule instead of renewing on every hit.
+    coalescedBreadcrumbs.delete(coalesceKey)
+    coalescedBreadcrumbs.set(coalesceKey, previous)
     return undefined
   }
 

@@ -187,5 +187,67 @@ describe('crash breadcrumb store', () => {
         expect.objectContaining({ livePanes: burstSize, livePaneManagers: burstSize })
       )
     })
+
+    // The suppression path returns before the delete-then-set that re-anchors
+    // recency, so a continuously-suppressed key kept its original insertion slot
+    // and became the FIRST eviction candidate — the exact inverse of the LRU's
+    // intent. `renderer_error` keys carry message+stack identity, so one noisy
+    // loop mints unbounded distinct keys and evicts the burst key mid-storm,
+    // re-arming the ring flush this suppression exists to prevent.
+    it('keeps suppressing a hot key while high-cardinality churn fills the LRU', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      const hitBurstKey = (): { suppressedSinceLast: number } | undefined =>
+        recordCoalescedCrashBreadcrumb({
+          name: 'terminal_safe_fit_retry_exhausted',
+          data: { livePanes: burstSize },
+          coalesceKey: 'terminal_safe_fit_retry_exhausted',
+          minIntervalMs: 30_000
+        })
+
+      hitBurstKey()
+      let reEmissions = 0
+      for (let index = 0; index < 200; index += 1) {
+        vi.advanceTimersByTime(10)
+        recordCoalescedCrashBreadcrumb({
+          name: 'renderer_error',
+          data: { message: `error-${index}` },
+          coalesceKey: `renderer_error:error-${index}`,
+          minIntervalMs: 30_000
+        })
+        if (hitBurstKey() !== undefined) {
+          reEmissions += 1
+        }
+      }
+
+      // Assert on suppression, not on ring occupancy: 200 genuinely-distinct
+      // errors legitimately flush the 30-entry ring, which masks an eviction as
+      // "one entry" either way.
+      expect(reEmissions).toBe(0)
+      expect(hitBurstKey()).toBeUndefined()
+    })
+
+    // Re-anchoring must move position only. Renewing recordedAt on every hit
+    // would let a sustained emitter suppress itself forever and never re-emit.
+    it('still expires the suppression window while a hot key is re-anchored', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      const hit = (): { suppressedSinceLast: number } | undefined =>
+        recordCoalescedCrashBreadcrumb({
+          name: 'terminal_safe_fit_retry_exhausted',
+          data: {},
+          coalesceKey: 'terminal_safe_fit_retry_exhausted',
+          minIntervalMs: 30_000
+        })
+
+      hit()
+      for (let index = 0; index < 29; index += 1) {
+        vi.advanceTimersByTime(1_000)
+        expect(hit()).toBeUndefined()
+      }
+      vi.advanceTimersByTime(1_000)
+
+      expect(hit()).toEqual({ suppressedSinceLast: 29 })
+    })
   })
 })
