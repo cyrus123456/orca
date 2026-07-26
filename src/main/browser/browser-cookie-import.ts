@@ -1747,6 +1747,7 @@ export async function importCookiesFromBrowser(
 
     diag(`  memory load: ${memoryLoaded} OK, ${memoryFailed} failed`)
 
+    let warning: string | undefined
     if (memoryFailed > 0 && stagingAvailable) {
       // Why: keep the staging DB so the failed cookies load from SQLite on next cold start, where CookieMonster skips validation.
       browserSessionRegistry.setPendingCookieImport(targetPartition, stagingCookiesPath)
@@ -1757,6 +1758,11 @@ export async function importCookiesFromBrowser(
       browserSessionRegistry.clearPendingCookieImport(targetPartition)
       discardStagingFile()
       diag(`  ${memoryFailed} cookies need a restart but staging is unavailable — skipped`)
+      // Why: the jar was already cleared, so silence here would report a lossy import as a clean success.
+      warning =
+        memoryLoaded === 0
+          ? `None of the ${memoryFailed} cookies could be loaded, and the restart fallback was unavailable. The previous cookies for this profile were replaced. Try the import again.`
+          : `${memoryLoaded} cookies were imported, but ${memoryFailed} were rejected and the restart fallback was unavailable. Those ${memoryFailed} will stay missing until you import again.`
     } else {
       // Why: this import already rewrote the live session, so an older staged DB must not replay over it.
       browserSessionRegistry.clearPendingCookieImport(targetPartition)
@@ -1776,7 +1782,8 @@ export async function importCookiesFromBrowser(
       totalCookies: sourceRows.length,
       importedCookies: imported,
       skippedCookies: skipped,
-      domains: [...domainSet].sort()
+      domains: [...domainSet].sort(),
+      ...(warning ? { warning } : {})
     }
 
     return { ok: true, profileId: '', summary }

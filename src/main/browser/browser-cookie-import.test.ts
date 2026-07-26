@@ -628,6 +628,8 @@ describe('importCookiesFromBrowser Chromium', () => {
       // An older staged DB must not survive an import that already rewrote the live session.
       expect(clearPendingCookieImportMock).toHaveBeenCalledWith('persist:test')
       expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+      // Why: the jar was cleared and nothing replaced it, so this must not read as a clean success.
+      expect(result.ok && result.summary?.warning).toMatch(/restart fallback was unavailable/)
     } finally {
       platformSpy.mockRestore()
     }
@@ -648,6 +650,9 @@ describe('importCookiesFromBrowser Chromium', () => {
        BEGIN SELECT RAISE(ABORT, 'staging write failed'); END`
     )
     targetDb.close()
+    // Why: without a memory failure, memoryFailed === 0 would suppress registration on its own and
+    // the assertion below would pass even if the insert failure never disabled staging.
+    cookiesSetMock.mockRejectedValue(new Error('cookie rejected'))
 
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
     try {
@@ -661,7 +666,35 @@ describe('importCookiesFromBrowser Chromium', () => {
         expect.objectContaining({ name: 'sid', value: 'source-value' })
       )
       expect(setPendingCookieImportMock).not.toHaveBeenCalled()
+      expect(clearPendingCookieImportMock).toHaveBeenCalledWith('persist:test')
       expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: #9355 — a successful in-memory import must retire any older staged replay, or the next
+  // cold start will overwrite the live session with a stale snapshot.
+  it('clears a stale staged replay after an import that fully succeeds in memory', async () => {
+    const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
+    const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
+    createChromiumCookieTestDatabase(targetCookiesPath, []).close()
+
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
+
+      expect(result.ok).toBe(true)
+      expect(setPendingCookieImportMock).not.toHaveBeenCalled()
+      expect(clearPendingCookieImportMock).toHaveBeenCalledWith('persist:test')
+      // A fully in-memory import needs no restart, so it must not warn.
+      expect(result.ok && result.summary?.warning).toBeUndefined()
     } finally {
       platformSpy.mockRestore()
     }
