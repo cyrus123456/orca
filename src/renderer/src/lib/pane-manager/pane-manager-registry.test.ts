@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   forEachLivePaneForDesyncSentinel,
+  getLivePaneCensus,
   refitAndRefreshAllTerminalPanes,
   registerLivePaneManager,
   resetAndRefreshAllTerminalWebglAtlases,
@@ -177,5 +178,49 @@ describe('pane manager registry', () => {
 
     expect(before).toHaveLength(2)
     expect(after).toEqual([before[1]])
+  })
+
+  // Why: this is the number crash reports could never recover from breadcrumb
+  // multiplicity, since every manager's first pane is id 1.
+  it('counts panes across managers and drops them on unregister', () => {
+    const twoPanes = {
+      resetWebglTextureAtlases: vi.fn<() => void>(),
+      getPanes: () => [
+        { id: 1, terminal: {} },
+        { id: 2, terminal: {} }
+      ]
+    }
+    const onePane = {
+      resetWebglTextureAtlases: vi.fn<() => void>(),
+      getPanes: () => [{ id: 1, terminal: {} }]
+    }
+    registerLivePaneManager(twoPanes)
+    registeredManagers.push(twoPanes)
+    registerLivePaneManager(onePane)
+    registeredManagers.push(onePane)
+
+    expect(getLivePaneCensus()).toEqual({ managers: 2, panes: 3 })
+
+    unregisterLivePaneManager(twoPanes)
+    expect(getLivePaneCensus()).toEqual({ managers: 1, panes: 1 })
+  })
+
+  it('counts surviving managers when one throws mid-teardown', () => {
+    const broken = {
+      resetWebglTextureAtlases: vi.fn<() => void>(),
+      getPanes: () => {
+        throw new Error('disposed')
+      }
+    }
+    const healthy = {
+      resetWebglTextureAtlases: vi.fn<() => void>(),
+      getPanes: () => [{ id: 1, terminal: {} }]
+    }
+    registerLivePaneManager(broken)
+    registeredManagers.push(broken)
+    registerLivePaneManager(healthy)
+    registeredManagers.push(healthy)
+
+    expect(getLivePaneCensus()).toEqual({ managers: 2, panes: 1 })
   })
 })
