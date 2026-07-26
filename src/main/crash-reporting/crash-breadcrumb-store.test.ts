@@ -249,5 +249,104 @@ describe('crash breadcrumb store', () => {
 
       expect(hit()).toEqual({ suppressedSinceLast: 29 })
     })
+
+    // Panes mount progressively, so the first crumb of a burst sees a census of
+    // 1. Freezing it would report `livePanes: 1` for a 34-pane wave — the exact
+    // "one pane looping" misread that coalescing by name was built to prevent.
+    it('reports the newest census of a growing burst, not the first', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      for (let pane = 1; pane <= burstSize; pane += 1) {
+        vi.advanceTimersByTime(2)
+        recordCoalescedCrashBreadcrumb({
+          name: 'terminal_safe_fit_retry_exhausted',
+          data: {
+            paneId: 1,
+            leafId: `3333333${pane}-3333-4333-8333-333333333333`,
+            livePanes: pane,
+            livePaneManagers: pane
+          },
+          coalesceKey: 'terminal_safe_fit_retry_exhausted',
+          minIntervalMs: 30_000
+        })
+      }
+
+      const bursts = getCrashBreadcrumbSnapshot().filter(
+        (entry) => entry.name === 'terminal_safe_fit_retry_exhausted'
+      )
+
+      expect(bursts).toHaveLength(1)
+      expect(bursts[0].data).toEqual(
+        expect.objectContaining({
+          livePanes: burstSize,
+          livePaneManagers: burstSize,
+          leafId: `3333333${burstSize}-3333-4333-8333-333333333333`,
+          suppressedSinceLast: burstSize - 1
+        })
+      )
+    })
+
+    // The re-emitted crumb already carries `suppressedSinceLast`, so folding the
+    // same events into the expiring slot too would report one burst twice.
+    it('counts a burst once when the window expires and the key re-emits', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      const hit = (livePanes: number): void => {
+        recordCoalescedCrashBreadcrumb({
+          name: 'terminal_safe_fit_retry_exhausted',
+          data: { livePanes },
+          coalesceKey: 'terminal_safe_fit_retry_exhausted',
+          minIntervalMs: 30_000
+        })
+      }
+
+      hit(1)
+      vi.advanceTimersByTime(10)
+      hit(2)
+      vi.advanceTimersByTime(31_000)
+      hit(3)
+
+      const bursts = getCrashBreadcrumbSnapshot().filter(
+        (entry) => entry.name === 'terminal_safe_fit_retry_exhausted'
+      )
+
+      expect(bursts).toHaveLength(2)
+      expect(bursts[0].data).toEqual({ livePanes: 1 })
+      expect(bursts[1].data).toEqual({ livePanes: 3, suppressedSinceLast: 1 })
+    })
+
+    // A key that ages out loses its only handle on the ring entry it owns, so
+    // the newest suppressed payload must be folded in before the entry is
+    // dropped from the map.
+    it('resolves a suppressed payload when an unrelated key ages the map', () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'))
+      recordCoalescedCrashBreadcrumb({
+        name: 'terminal_park_verdict_churn',
+        data: { livePanes: 1 },
+        coalesceKey: 'terminal_park_verdict_churn',
+        minIntervalMs: 30_000
+      })
+      vi.advanceTimersByTime(10)
+      recordCoalescedCrashBreadcrumb({
+        name: 'terminal_park_verdict_churn',
+        data: { livePanes: 9 },
+        coalesceKey: 'terminal_park_verdict_churn',
+        minIntervalMs: 30_000
+      })
+      vi.advanceTimersByTime(31_000)
+      recordCoalescedCrashBreadcrumb({
+        name: 'terminal_safe_fit_retry_exhausted',
+        data: { livePanes: 2 },
+        coalesceKey: 'terminal_safe_fit_retry_exhausted',
+        minIntervalMs: 30_000
+      })
+
+      const churn = getCrashBreadcrumbSnapshot().find(
+        (entry) => entry.name === 'terminal_park_verdict_churn'
+      )
+
+      expect(churn?.data).toEqual({ livePanes: 9, suppressedSinceLast: 1 })
+    })
   })
 })
