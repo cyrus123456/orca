@@ -47,8 +47,16 @@ import {
   createChromiumCookieTestDatabase,
   encryptMacChromiumCookie
 } from './browser-cookie-import-test-database'
-import { existsSync, writeFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync
+} from 'node:fs'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 
 function chromeBrowser(cookiesPath: string): DetectedBrowser {
@@ -515,20 +523,70 @@ describe('importCookiesFromBrowser Chromium', () => {
     }
   })
 
-  it('removes partial staging data when the target database copy fails', async () => {
+  // Why: #9355 — staging only backs the cold-restart replay, so an AV/EDR handle that blocks
+  // the staging copy must degrade that fallback, not abort an import the memory path can serve.
+  it('still imports in-memory when the target database copy fails', async () => {
     const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
     const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
-    createChromiumCookieTestDatabase(sourceCookiesPath, []).close()
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
     createChromiumCookieTestDatabase(targetCookiesPath, []).close()
+    // The staging copy runs before the source snapshot, so the first copy is the staging one.
     copyFileSyncMock.mockImplementationOnce((_source: string, destination: string) => {
       writeFileSync(destination, 'partial cookie database')
-      throw new Error('simulated copy failure')
+      const error = new Error('EBUSY: resource busy or locked, copyfile') as NodeJS.ErrnoException
+      error.code = 'EBUSY'
+      throw error
     })
 
-    const result = await importCookiesFromBrowser(chromeBrowser(sourceCookiesPath), 'persist:test')
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
 
-    expect(result).toEqual({ ok: false, reason: 'Could not create staging cookie database.' })
-    expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+      expect(result.ok).toBe(true)
+      expect(cookiesSetMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'sid', value: 'source-value' })
+      )
+      // The partial staging file is still discarded, so no stale DB replays on cold start.
+      expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: #9355 — the staged file is also named "Cookies", so the same transient handle can make
+  // opening it throw. That was fatal too, and the count must stay truthful without a staging DB.
+  it('still imports in-memory when the staging database cannot be opened', async () => {
+    const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
+    const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
+    mkdirSync(dirname(targetCookiesPath), { recursive: true })
+    // A live partition DB that copies fine but is not openable as SQLite.
+    writeFileSync(targetCookiesPath, 'not a sqlite database')
+
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
+
+      expect(result.ok).toBe(true)
+      expect(cookiesSetMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'sid', value: 'source-value' })
+      )
+      // The summary counts importable cookies, not staged rows.
+      expect(result.ok && result.summary?.importedCookies).toBe(1)
+      expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
   })
 })
 
