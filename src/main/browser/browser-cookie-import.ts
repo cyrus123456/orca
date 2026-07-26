@@ -1533,6 +1533,8 @@ export async function importCookiesFromBrowser(
         colList = null
         placeholders = null
         closeStagingDb()
+        // Why: the copy holds real partition cookies; discard it now rather than at the exit branches.
+        discardStagingFile()
       }
     }
 
@@ -1605,12 +1607,27 @@ export async function importCookiesFromBrowser(
 
     const decryptedCookies: DecryptedCookie[] = []
 
-    const insertStmt =
-      stagingDb && colList && placeholders
-        ? stagingDb.prepare(`INSERT OR REPLACE INTO cookies (${colList}) VALUES (${placeholders})`)
-        : null
+    // Why: staging only backs the cold-restart replay, so any failure writing it disables that
+    // fallback instead of aborting an import whose in-memory half still works.
+    let insertStmt: ReturnType<InstanceType<typeof DatabaseSync>['prepare']> | null = null
+    const disableStaging = (reason: string): void => {
+      diag(`  staging disabled, restart fallback unavailable: ${reason}`)
+      stagingAvailable = false
+      insertStmt = null
+      closeStagingDb()
+      discardStagingFile()
+    }
 
-    stagingDb?.exec('BEGIN TRANSACTION')
+    if (stagingDb && colList && placeholders) {
+      try {
+        insertStmt = stagingDb.prepare(
+          `INSERT OR REPLACE INTO cookies (${colList}) VALUES (${placeholders})`
+        )
+        stagingDb.exec('BEGIN TRANSACTION')
+      } catch (err) {
+        disableStaging(String(err))
+      }
+    }
 
     for (const sourceRow of sourceRows) {
       const encRaw = sourceRow.encrypted_value
@@ -1666,8 +1683,16 @@ export async function importCookiesFromBrowser(
       })
 
       if (insertStmt && targetColumnInfo) {
-        const params = buildChromiumCookieInsertParams(targetColumnInfo, sourceRow, decryptedValue)
-        insertStmt.run(...params)
+        try {
+          const params = buildChromiumCookieInsertParams(
+            targetColumnInfo,
+            sourceRow,
+            decryptedValue
+          )
+          insertStmt.run(...params)
+        } catch (err) {
+          disableStaging(String(err))
+        }
       }
       // Why: counts importable cookies, not staged rows — the summary must stay truthful when
       // the optional staging DB is unavailable.
@@ -1676,9 +1701,13 @@ export async function importCookiesFromBrowser(
     diag(`  skipped ${integritySkipped} Google integrity cookies (SIDCC/STRP/AEC)`)
 
     if (stagingDb) {
-      stagingDb.exec('COMMIT')
-      closeStagingDb()
-      diag(`  SQLite staging complete: ${imported} cookies, ${domainSet.size} domains`)
+      try {
+        stagingDb.exec('COMMIT')
+        closeStagingDb()
+        diag(`  SQLite staging complete: ${imported} cookies, ${domainSet.size} domains`)
+      } catch (err) {
+        disableStaging(String(err))
+      }
     } else {
       diag(`  staging skipped: ${imported} cookies will load in-memory only`)
     }
@@ -1725,8 +1754,12 @@ export async function importCookiesFromBrowser(
     } else if (memoryFailed > 0) {
       // Why: never register a path that was never written — cold start would replay a missing
       // or partial DB over the live partition.
+      browserSessionRegistry.clearPendingCookieImport(targetPartition)
+      discardStagingFile()
       diag(`  ${memoryFailed} cookies need a restart but staging is unavailable — skipped`)
     } else {
+      // Why: this import already rewrote the live session, so an older staged DB must not replay over it.
+      browserSessionRegistry.clearPendingCookieImport(targetPartition)
       discardStagingFile()
       diag(`  all cookies loaded in-memory — no restart needed`)
     }

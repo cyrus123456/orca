@@ -6,13 +6,25 @@ const {
   copyFileSyncMock,
   execFileSyncMock,
   sessionFromPartitionMock,
-  dialogShowOpenDialogMock
+  dialogShowOpenDialogMock,
+  setPendingCookieImportMock,
+  clearPendingCookieImportMock
 } = vi.hoisted(() => ({
   appGetPathMock: vi.fn(),
   copyFileSyncMock: vi.fn(),
   execFileSyncMock: vi.fn(),
   sessionFromPartitionMock: vi.fn(),
-  dialogShowOpenDialogMock: vi.fn()
+  dialogShowOpenDialogMock: vi.fn(),
+  setPendingCookieImportMock: vi.fn(),
+  clearPendingCookieImportMock: vi.fn()
+}))
+
+vi.mock('./browser-session-registry', () => ({
+  browserSessionRegistry: {
+    setPendingCookieImport: setPendingCookieImportMock,
+    clearPendingCookieImport: clearPendingCookieImportMock,
+    persistUserAgent: vi.fn()
+  }
 }))
 
 vi.mock('node:child_process', () => ({ execFileSync: execFileSyncMock }))
@@ -390,6 +402,8 @@ describe('importCookiesFromBrowser Chromium', () => {
     appGetPathMock.mockReset()
     appGetPathMock.mockReturnValue(join(tmpDir, 'userData'))
     copyFileSyncMock.mockClear()
+    setPendingCookieImportMock.mockClear()
+    clearPendingCookieImportMock.mockClear()
     execFileSyncMock.mockReset()
     execFileSyncMock.mockImplementation(() => {
       throw new Error('OS credential commands are unavailable in this test')
@@ -584,6 +598,97 @@ describe('importCookiesFromBrowser Chromium', () => {
       // The summary counts importable cookies, not staged rows.
       expect(result.ok && result.summary?.importedCookies).toBe(1)
       expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: #9355 — registering a staged path that was never written would make the next cold start
+  // replay a missing or partial DB over the live partition.
+  it('never registers a restart replay when staging is unavailable', async () => {
+    const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
+    const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
+    mkdirSync(dirname(targetCookiesPath), { recursive: true })
+    writeFileSync(targetCookiesPath, 'not a sqlite database')
+    // Forces the restart fallback to be the only way these cookies could ever land.
+    cookiesSetMock.mockRejectedValue(new Error('cookie rejected'))
+
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
+
+      expect(result.ok).toBe(true)
+      expect(setPendingCookieImportMock).not.toHaveBeenCalled()
+      // An older staged DB must not survive an import that already rewrote the live session.
+      expect(clearPendingCookieImportMock).toHaveBeenCalledWith('persist:test')
+      expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: #9355 — a staging write that fails mid-transaction must disable the restart fallback
+  // rather than abort an import whose in-memory half still works.
+  it('still imports in-memory when a staging insert fails', async () => {
+    const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
+    const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
+    const targetDb = createChromiumCookieTestDatabase(targetCookiesPath, [])
+    // Rejects every staged row the way a corrupt index or disk error would.
+    targetDb.exec(
+      `CREATE TRIGGER reject_insert BEFORE INSERT ON cookies
+       BEGIN SELECT RAISE(ABORT, 'staging write failed'); END`
+    )
+    targetDb.close()
+
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
+
+      expect(result.ok).toBe(true)
+      expect(cookiesSetMock).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'sid', value: 'source-value' })
+      )
+      expect(setPendingCookieImportMock).not.toHaveBeenCalled()
+      expect(readdirSync(join(tmpDir, 'userData', 'cookie-import-staging'))).toEqual([])
+    } finally {
+      platformSpy.mockRestore()
+    }
+  })
+
+  // Why: the staged path is the restart fallback's only input, so a working staging DB must register it.
+  it('registers the staged database when cookies need a restart', async () => {
+    const sourceCookiesPath = join(tmpDir, 'Chrome', 'Default', 'Network', 'Cookies')
+    const targetCookiesPath = join(tmpDir, 'userData', 'Partitions', 'test', 'Network', 'Cookies')
+    createChromiumCookieTestDatabase(sourceCookiesPath, [
+      { name: 'sid', value: 'source-value' }
+    ]).close()
+    createChromiumCookieTestDatabase(targetCookiesPath, []).close()
+    cookiesSetMock.mockRejectedValue(new Error('cookie rejected'))
+
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
+    try {
+      const result = await importCookiesFromBrowser(
+        chromeBrowser(sourceCookiesPath),
+        'persist:test'
+      )
+
+      expect(result.ok).toBe(true)
+      expect(setPendingCookieImportMock).toHaveBeenCalledTimes(1)
+      const [partition, stagedPath] = setPendingCookieImportMock.mock.calls[0]
+      expect(partition).toBe('persist:test')
+      expect(existsSync(stagedPath as string)).toBe(true)
     } finally {
       platformSpy.mockRestore()
     }
