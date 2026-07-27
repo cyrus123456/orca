@@ -28,12 +28,15 @@ export type SettingsSlice = SettingsSearchState & {
   settings: GlobalSettings | null
   fetchSettings: () => Promise<void>
   updateSettings: (updates: Partial<GlobalSettings>) => Promise<void>
+  updateSettingsOrThrow: (updates: Partial<GlobalSettings>) => Promise<void>
   setActiveRuntimeEnvironmentPreference: (environmentId: string | null) => Promise<boolean>
 }
 
 type LegacyTerminalScrollbackSettingsUpdate = Partial<GlobalSettings> & {
   terminalScrollbackBytes?: unknown
 }
+
+type SettingsStateSetter = Parameters<StateCreator<AppState, [], [], SettingsSlice>>[0]
 
 function normalizeRuntimeEnvironmentId(value: string | null | undefined): string | null {
   const trimmed = value?.trim()
@@ -45,6 +48,125 @@ function createOpenInApplicationId(): string {
     globalThis.crypto?.randomUUID?.() ??
     `open-in-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
   )
+}
+
+function normalizeSettingsUpdates(
+  updates: Partial<GlobalSettings>,
+  currentSettings: GlobalSettings | null
+): Partial<GlobalSettings> {
+  const { terminalScrollbackBytes: _legacyScrollbackBytes, ...sanitizedUpdates } =
+    updates as LegacyTerminalScrollbackSettingsUpdate
+  void _legacyScrollbackBytes
+  if ('terminalQuickCommands' in updates) {
+    sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
+      updates.terminalQuickCommands
+    )
+  }
+  if ('terminalCustomThemes' in updates) {
+    sanitizedUpdates.terminalCustomThemes = normalizeTerminalCustomThemes(
+      updates.terminalCustomThemes
+    )
+  }
+  if ('visibleTaskProviders' in updates || 'defaultTaskSource' in updates) {
+    const taskProviderSettings = normalizeTaskProviderSettings({
+      visibleTaskProviders:
+        'visibleTaskProviders' in updates
+          ? updates.visibleTaskProviders
+          : currentSettings?.visibleTaskProviders,
+      defaultTaskSource:
+        'defaultTaskSource' in updates
+          ? updates.defaultTaskSource
+          : currentSettings?.defaultTaskSource
+    })
+    sanitizedUpdates.defaultTaskSource = taskProviderSettings.defaultTaskSource
+    sanitizedUpdates.visibleTaskProviders = taskProviderSettings.visibleTaskProviders
+  }
+  if ('openInApplications' in updates) {
+    sanitizedUpdates.openInApplications = normalizeOpenInApplications(updates.openInApplications, {
+      createId: createOpenInApplicationId
+    })
+  }
+  if ('disabledTuiAgents' in updates) {
+    sanitizedUpdates.disabledTuiAgents = normalizeDisabledTuiAgents(updates.disabledTuiAgents)
+  }
+  if ('agentDefaultArgs' in updates) {
+    sanitizedUpdates.agentDefaultArgs = normalizeTuiAgentArgsRecord(updates.agentDefaultArgs)
+    sanitizedUpdates.agentYoloDefaultsMigrated = true
+  }
+  if ('agentDefaultEnv' in updates) {
+    sanitizedUpdates.agentDefaultEnv = normalizeTuiAgentEnvRecord(updates.agentDefaultEnv)
+    sanitizedUpdates.agentYoloDefaultsMigrated = true
+  }
+  if ('customAgents' in updates) {
+    const raw = Array.isArray(updates.customAgents) ? updates.customAgents : []
+    const validCustomAgents = raw.filter(
+      (a): a is NonNullable<typeof a> =>
+        a != null &&
+        typeof a.id === 'string' &&
+        a.id.trim() !== '' &&
+        typeof a.label === 'string' &&
+        typeof a.cmd === 'string' &&
+        a.label.trim() !== '' &&
+        a.cmd.trim() !== ''
+    )
+    // Why: last-write-wins dedup by trimmed id so a re-imported agent
+    // replaces the prior entry instead of producing duplicate ids, and
+    // type-guard every optional field so a non-string value (e.g. a number
+    // sneaking in via {args: 1}) can't throw inside .trim() and abort the
+    // whole settings update.
+    sanitizedUpdates.customAgents = validCustomAgents.reduce<CustomAgent[]>((acc, a) => {
+      const id = a.id.trim()
+      const envRaw = a.env
+      const env =
+        envRaw && typeof envRaw === 'object' && !Array.isArray(envRaw)
+          ? Object.fromEntries(
+              Object.entries(envRaw).filter(
+                (entry): entry is [string, string] => typeof entry[1] === 'string'
+              )
+            )
+          : undefined
+      const entry: CustomAgent = {
+        id,
+        label: a.label.trim(),
+        cmd: a.cmd.trim(),
+        ...(typeof a.args === 'string' && a.args.trim() ? { args: a.args.trim() } : {}),
+        ...(env && Object.keys(env).length > 0 ? { env } : {}),
+        ...(typeof a.iconUrl === 'string' && a.iconUrl.trim() ? { iconUrl: a.iconUrl.trim() } : {}),
+        ...(typeof a.faviconDomain === 'string' && a.faviconDomain.trim()
+          ? { faviconDomain: a.faviconDomain.trim() }
+          : {})
+      }
+      const existingIndex = acc.findIndex((c) => c.id === id)
+      if (existingIndex >= 0) {
+        acc[existingIndex] = entry
+      } else {
+        acc.push(entry)
+      }
+      return acc
+    }, [])
+  }
+  if ('uiLanguage' in updates) {
+    sanitizedUpdates.uiLanguage = normalizeUiLanguage(updates.uiLanguage)
+  }
+  if ('terminalScrollbackRows' in updates) {
+    sanitizedUpdates.terminalScrollbackRows = normalizeDesktopTerminalScrollbackRows(
+      updates.terminalScrollbackRows
+    )
+  }
+  return sanitizedUpdates
+}
+
+async function persistSettingsUpdates(
+  set: SettingsStateSetter,
+  updates: Partial<GlobalSettings>,
+  currentSettings: GlobalSettings | null
+): Promise<void> {
+  const nextSettings = await window.api.settings.set(
+    normalizeSettingsUpdates(updates, currentSettings)
+  )
+  set((state) => ({
+    settings: (nextSettings as GlobalSettings | undefined) ?? state.settings
+  }))
 }
 
 async function verifyRuntimeEnvironmentReachable(environmentId: string | null): Promise<void> {
@@ -81,115 +203,14 @@ export const createSettingsSlice: StateCreator<AppState, [], [], SettingsSlice> 
 
   updateSettings: async (updates) => {
     try {
-      const { terminalScrollbackBytes: _legacyScrollbackBytes, ...sanitizedUpdates } =
-        updates as LegacyTerminalScrollbackSettingsUpdate
-      void _legacyScrollbackBytes
-      if ('terminalQuickCommands' in updates) {
-        sanitizedUpdates.terminalQuickCommands = normalizeTerminalQuickCommands(
-          updates.terminalQuickCommands
-        )
-      }
-      if ('terminalCustomThemes' in updates) {
-        sanitizedUpdates.terminalCustomThemes = normalizeTerminalCustomThemes(
-          updates.terminalCustomThemes
-        )
-      }
-      if ('visibleTaskProviders' in updates || 'defaultTaskSource' in updates) {
-        const taskProviderSettings = normalizeTaskProviderSettings({
-          visibleTaskProviders:
-            'visibleTaskProviders' in updates
-              ? updates.visibleTaskProviders
-              : get().settings?.visibleTaskProviders,
-          defaultTaskSource:
-            'defaultTaskSource' in updates
-              ? updates.defaultTaskSource
-              : get().settings?.defaultTaskSource
-        })
-        sanitizedUpdates.defaultTaskSource = taskProviderSettings.defaultTaskSource
-        sanitizedUpdates.visibleTaskProviders = taskProviderSettings.visibleTaskProviders
-      }
-      if ('openInApplications' in updates) {
-        sanitizedUpdates.openInApplications = normalizeOpenInApplications(
-          updates.openInApplications,
-          {
-            createId: createOpenInApplicationId
-          }
-        )
-      }
-      if ('disabledTuiAgents' in updates) {
-        sanitizedUpdates.disabledTuiAgents = normalizeDisabledTuiAgents(updates.disabledTuiAgents)
-      }
-      if ('agentDefaultArgs' in updates) {
-        sanitizedUpdates.agentDefaultArgs = normalizeTuiAgentArgsRecord(updates.agentDefaultArgs)
-        sanitizedUpdates.agentYoloDefaultsMigrated = true
-      }
-      if ('agentDefaultEnv' in updates) {
-        sanitizedUpdates.agentDefaultEnv = normalizeTuiAgentEnvRecord(updates.agentDefaultEnv)
-        sanitizedUpdates.agentYoloDefaultsMigrated = true
-      }
-      if ('customAgents' in updates) {
-        const raw = Array.isArray(updates.customAgents) ? updates.customAgents : []
-        const validCustomAgents = raw.filter(
-          (a): a is NonNullable<typeof a> =>
-            a != null &&
-            typeof a.id === 'string' &&
-            a.id.trim() !== '' &&
-            typeof a.label === 'string' &&
-            typeof a.cmd === 'string' &&
-            a.label.trim() !== '' &&
-            a.cmd.trim() !== ''
-        )
-        // Why: last-write-wins dedup by trimmed id so a re-imported agent
-        // replaces the prior entry instead of producing duplicate ids, and
-        // type-guard every optional field so a non-string value (e.g. a number
-        // sneaking in via {args: 1}) can't throw inside .trim() and abort the
-        // whole settings update.
-        sanitizedUpdates.customAgents = validCustomAgents.reduce<CustomAgent[]>((acc, a) => {
-          const id = a.id.trim()
-          const envRaw = a.env
-          const env =
-            envRaw && typeof envRaw === 'object' && !Array.isArray(envRaw)
-              ? Object.fromEntries(
-                  Object.entries(envRaw).filter(
-                    (entry): entry is [string, string] => typeof entry[1] === 'string'
-                  )
-                )
-              : undefined
-          const entry: CustomAgent = {
-            id,
-            label: a.label.trim(),
-            cmd: a.cmd.trim(),
-            ...(typeof a.args === 'string' && a.args.trim() ? { args: a.args.trim() } : {}),
-            ...(env && Object.keys(env).length > 0 ? { env } : {}),
-            ...(typeof a.iconUrl === 'string' && a.iconUrl.trim()
-              ? { iconUrl: a.iconUrl.trim() }
-              : {}),
-            ...(typeof a.faviconDomain === 'string' && a.faviconDomain.trim()
-              ? { faviconDomain: a.faviconDomain.trim() }
-              : {})
-          }
-          const existingIndex = acc.findIndex((c) => c.id === id)
-          if (existingIndex >= 0) {
-            acc[existingIndex] = entry
-          } else {
-            acc.push(entry)
-          }
-          return acc
-        }, [])
-      }
-      if ('uiLanguage' in updates) {
-        sanitizedUpdates.uiLanguage = normalizeUiLanguage(updates.uiLanguage)
-      }
-      if ('terminalScrollbackRows' in updates) {
-        sanitizedUpdates.terminalScrollbackRows = normalizeDesktopTerminalScrollbackRows(
-          updates.terminalScrollbackRows
-        )
-      }
-      const nextSettings = await window.api.settings.set(sanitizedUpdates)
-      set((s) => ({ settings: (nextSettings as GlobalSettings | undefined) ?? s.settings }))
+      await persistSettingsUpdates(set, updates, get().settings)
     } catch (err) {
       console.error('Failed to update settings:', err)
     }
+  },
+
+  updateSettingsOrThrow: async (updates) => {
+    await persistSettingsUpdates(set, updates, get().settings)
   },
 
   setActiveRuntimeEnvironmentPreference: async (environmentId) => {
