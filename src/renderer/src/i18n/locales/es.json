@@ -2812,12 +2812,12 @@
             "8e9d603a09": "Desanclar pestaña"
           },
           "QuickLaunchButton": {
-            "348a04c1ad": "Ajustes de Agents…",
+            "348a04c1ad": "Ajustes de agentes…",
             "ec2adf093e": "Iniciar {{value0}} en un nuevo terminal",
             "465e432ef1": "No se pudo generar el comando de inicio para {{value0}}.",
             "e518f544b1": "No se detectaron agentes",
             "8dea9b5cdf": "No hay agentes habilitados",
-            "customAgents": "Agents personalizados"
+            "customAgents": "Agentes personalizados"
           },
           "RecentTabSwitcher": {
             "329638ff6f": "Cambiar pestaña",
@@ -3730,14 +3730,14 @@
           "tipReadOnly": "La skill aquí está en una ubicación de solo lectura, así que no se puede actualizar hasta que cambies sus permisos.",
           "tipInRepo": "La skill aquí vive dentro de un proyecto, no en tus skills globales; Orca solo actualiza las globales.",
           "tipPluginCache": "La skill aquí la gestiona un plugin; actualiza el plugin en su lugar.",
-          "skippedReasonUnrecognized": "The copy here doesn’t match the official version — it may be modified, or a different skill with the same name. Orca left it out of the update so it won’t overwrite it. Remove it if you want Orca to update this skill.",
+          "skippedReasonUnrecognized": "The copy here doesn't match the official version — it may be modified, or a different skill with the same name. Orca left it out of the update so it won't overwrite it. Remove it if you want Orca to update this skill.",
           "skippedReasonReadOnly": "This copy is in a read-only location, so Orca left it out of the update. Change its permissions to let Orca update it.",
-          "skippedReasonInaccessible": "Orca couldn’t read this copy, so it left the skill out of the update.",
+          "skippedReasonInaccessible": "Orca couldn't read this copy, so it left the skill out of the update.",
           "skippedReasonInRepo": "This is a project skill, not a global one — Orca only updates your global skills, so it left this out of the update.",
           "skippedReasonPluginCache": "A plugin manages this skill, so Orca left it out of the update — update the plugin instead.",
-          "skippedReasonExternalLink": "This copy is a shortcut pointing outside Orca’s skill folders, so Orca left it out of the update.",
+          "skippedReasonExternalLink": "This copy is a shortcut pointing outside Orca's skill folders, so Orca left it out of the update.",
           "skippedReasonBrokenLink": "This copy is a shortcut to something that no longer exists, so Orca left it out — you can safely delete it.",
-          "skippedReasonDuplicate": "This is a separate copy, so the update won’t reach it — the command only refreshes the main copy. Remove this copy, then reinstall the skill so this location follows the main one."
+          "skippedReasonDuplicate": "This is a separate copy, so the update won't reach it — the command only refreshes the main copy. Remove this copy, then reinstall the skill so this location follows the main one."
         },
         "SkillFreshnessUpdateDialog": {
           "title": "Actualizar skills",
@@ -4874,7 +4874,7 @@
         "ForgetSshWorkspaceDialog": {
           "reconnectFailed": "Error de reconexión",
           "forgetBody": "Elimina este espacio de trabajo solo de Orca. Los archivos, el worktree de Git y las ramas en {{host}} permanecen intactos.",
-          "title": "¿Eliminar “{{name}}”?",
+          "title": "¿Eliminar \"{{name}}\"?",
           "disconnectedBody": "El host SSH de este espacio de trabajo no está conectado. Reconéctalo para eliminarlo también en el remoto, o elimínalo solo de Orca.",
           "ghostBody": "{{host}} ya no es un host SSH guardado, por lo que este espacio de trabajo ya no está conectado a un host activo. Solo se puede eliminar de Orca — los archivos y ramas en el remoto permanecen intactos.",
           "cancel": "Cancelar",
@@ -5157,14 +5157,14 @@
           "codexSessionSourceInfo": "Sobre la importación del historial de Codex",
           "codexSessionSourceTooltip": "Orca ejecuta Codex en un directorio aislado. Señala aquí a tu directorio Codex existente para importar el historial de sesiones. Dejar vacío usa ~/.codex.",
           "03e1a5081a": "on {{value0}}",
-          "25a41a9aad": "Re-detect agents installed on the active server",
-          "remoteDetectionFailed": "Couldn’t detect installed agents. Check the host connection and try again.",
-          "retryDetection": "Retry",
-          "customAgentsTitle": "Agents Personalizados",
-          "customAgentsDescription": "Agrega tus propios agents CLI que no están en el catálogo integrado.",
+          "25a41a9aad": "Re-detectar los agentes instalados en el servidor activo",
+          "remoteDetectionFailed": "No se pudieron detectar los agentes instalados. Comprueba la conexión del host e inténtalo de nuevo.",
+          "retryDetection": "Reintentar",
+          "customAgentsTitle": "Agentes personalizados",
+          "customAgentsDescription": "Agrega tus propios agentes CLI que no están en el catálogo integrado.",
           "customAgentAdd": "Agregar",
           "customAgentName": "Nombre",
-          "customAgentNamePlaceholder": "Mi Agent",
+          "customAgentNamePlaceholder": "Mi agente",
           "customAgentCmd": "Comando",
           "customAgentCmdPlaceholder": "my-agent",
           "customAgentArgs": "Argumentos",
@@ -5182,10 +5182,10 @@
           "customAgentFaviconDomain": "Dominio Favicon",
           "customAgentFaviconDomainPlaceholder": "example.com",
           "customAgentIconBrowse": "Examinar",
-          "customAgentEdit": "Editar agent personalizado",
-          "customAgentDelete": "Eliminar agent personalizado",
-          "customAgentsEmpty": "No hay agents personalizados. Haz clic en \"Agregar\" para crear uno.",
-          "customAgentsDefaultGroup": "Agents personalizados"
+          "customAgentEdit": "Editar agente personalizado",
+          "customAgentDelete": "Eliminar agente personalizado",
+          "customAgentsEmpty": "No hay agentes personalizados. Haz clic en \"Agregar\" para crear uno.",
+          "customAgentsDefaultGroup": "Agentes personalizados"
         },
         "AppIconSelector": {
           "d5a112dc9b": "Icono siguiente",
@@ -11755,12 +11755,12 @@
           },
           "FeatureTipsModal": {
             "c169298e4d": "Hecho",
-            "3c6c478462": "X termina, envíale la tarea de revisión”.",
+            "3c6c478462": "X termina, envíale la tarea de revisión.",
             "298301b7a0": "worktree",
-            "864e2db28f": "“Cuando el agente en",
-            "7fc6f02099": "y crear PR para cada uno”.",
+            "864e2db28f": "\"Cuando el agente en",
+            "7fc6f02099": "y crear PR para cada uno.\"",
             "27c567a89c": "worktrees",
-            "55846c7f95": "“Divide este PR en dos",
+            "55846c7f95": "\"Divide este PR en dos",
             "4795ac2d4a": "Prueba a pedir:",
             "53905bd076": "Vista previa de desarrollo: abriendo la terminal de configuración de skills.",
             "1da82af45b": "Orca CLI necesita atención",
@@ -13168,16 +13168,16 @@
       },
       "agent": {
         "AgentCombobox": {
-          "19522e25ee": "Administrar agents",
+          "19522e25ee": "Administrar agentes",
           "986f946354": "Terminal en blanco",
           "579c768bde": "Ningún agente coincide con su búsqueda.",
-          "48c6a5a9b4": "Agentes de búsqueda...",
+          "48c6a5a9b4": "Buscar agentes...",
           "9c6b59fe58": "Establecer como predeterminado",
           "1b0d6965fa": "Valor predeterminado actual",
-          "customAgents": "Agents personalizados"
+          "customAgents": "Agentes personalizados"
         },
         "AgentSettingsDialog": {
-          "50cdb57c03": "Administre agents de IA, establezca un valor predeterminado y personalice comandos.",
+          "50cdb57c03": "Administre agentes de IA, establezca un valor predeterminado y personalice comandos.",
           "fc0268e4ed": "Agentes"
         }
       },

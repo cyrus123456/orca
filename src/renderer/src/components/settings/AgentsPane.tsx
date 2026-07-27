@@ -58,6 +58,8 @@ import {
 } from '../../../../shared/tui-agent-permissions'
 import { getSettingOwnershipSummary } from './setting-ownership'
 import { translate } from '@/i18n/i18n'
+import { toast } from 'sonner'
+import { CustomAgentIcon } from '../agent/CustomAgentIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { parseAgentDefaultEnvDraft, stringifyAgentDefaultEnvDraft } from './agent-default-env-draft'
 
@@ -683,38 +685,6 @@ function DefaultAgentPill({ active, onClick, children }: DefaultAgentPillProps):
   )
 }
 
-function CustomAgentDefaultPillIcon({ agent }: { agent: CustomAgent }): React.JSX.Element {
-  if (agent.iconUrl) {
-    return (
-      <img
-        src={agent.iconUrl}
-        width={14}
-        height={14}
-        alt=""
-        aria-hidden
-        style={{ borderRadius: 2 }}
-      />
-    )
-  }
-  if (agent.faviconDomain) {
-    return (
-      <img
-        src={`https://www.google.com/s2/favicons?domain=${agent.faviconDomain}&sz=64`}
-        width={14}
-        height={14}
-        alt=""
-        aria-hidden
-        style={{ borderRadius: 2 }}
-      />
-    )
-  }
-  return (
-    <span className="flex size-3.5 shrink-0 items-center justify-center rounded-[3px] bg-muted text-[8px] font-bold text-muted-foreground">
-      {agent.label.charAt(0).toUpperCase()}
-    </span>
-  )
-}
-
 export function AgentsPane({
   settings,
   updateSettings,
@@ -841,7 +811,12 @@ export function AgentsPane({
   }
 
   const deleteCustomAgent = (id: string): void => {
-    updateSettings({ customAgents: customAgents.filter((a) => a.id !== id) })
+    updateSettings({
+      customAgents: customAgents.filter((a) => a.id !== id),
+      // Why: clear the default if it pointed at the deleted agent so the
+      // picker doesn't pin a stale id that no longer resolves to an agent.
+      ...(defaultCustomAgentId === id ? { defaultCustomAgentId: null } : {})
+    })
   }
 
   // Why: null means detection is in flight, not "all agents are installed".
@@ -927,7 +902,7 @@ export function AgentsPane({
                     active={isActive}
                     onClick={() => setDefaultCustomAgent(isActive ? null : agent.id)}
                   >
-                    <CustomAgentDefaultPillIcon agent={agent} />
+                    <CustomAgentIcon agent={agent} />
                     {agent.label}
                     {isActive && <Check className="size-3.5" />}
                   </DefaultAgentPill>
@@ -1155,6 +1130,8 @@ function CustomAgentEditor({
       .join('\n')
   })
   const [error, setError] = useState<string | null>(null)
+  // Why: associate each field label with its input for screen-reader users.
+  const editorInputBase = useId()
 
   const handleSave = (): void => {
     const trimmedLabel = label.trim()
@@ -1212,10 +1189,11 @@ function CustomAgentEditor({
     <div className="space-y-3 rounded-md border border-border/60 bg-background/30 p-3">
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">
+          <label htmlFor={`${editorInputBase}-name`} className="text-xs text-muted-foreground">
             {translate('auto.components.settings.AgentsPane.customAgentName', 'Name')}
           </label>
           <Input
+            id={`${editorInputBase}-name`}
             value={label}
             onChange={(e) => {
               setLabel(e.target.value)
@@ -1232,10 +1210,11 @@ function CustomAgentEditor({
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">
+          <label htmlFor={`${editorInputBase}-cmd`} className="text-xs text-muted-foreground">
             {translate('auto.components.settings.AgentsPane.customAgentCmd', 'Command')}
           </label>
           <Input
+            id={`${editorInputBase}-cmd`}
             value={cmd}
             onChange={(e) => {
               setCmd(e.target.value)
@@ -1253,10 +1232,11 @@ function CustomAgentEditor({
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">
+        <label htmlFor={`${editorInputBase}-args`} className="text-xs text-muted-foreground">
           {translate('auto.components.settings.AgentsPane.customAgentArgs', 'Arguments')}
         </label>
         <Input
+          id={`${editorInputBase}-args`}
           value={args}
           onChange={(e) => setArgs(e.target.value)}
           placeholder={translate(
@@ -1268,13 +1248,14 @@ function CustomAgentEditor({
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs text-muted-foreground">
+        <label htmlFor={`${editorInputBase}-env`} className="text-xs text-muted-foreground">
           {translate(
             'auto.components.settings.AgentsPane.customAgentEnv',
             'Environment (one KEY=VALUE per line)'
           )}
         </label>
         <textarea
+          id={`${editorInputBase}-env`}
           value={envText}
           onChange={(e) => setEnvText(e.target.value)}
           placeholder={translate(
@@ -1288,11 +1269,12 @@ function CustomAgentEditor({
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">
+          <label htmlFor={`${editorInputBase}-icon`} className="text-xs text-muted-foreground">
             {translate('auto.components.settings.AgentsPane.customAgentIconUrl', 'Icon URL')}
           </label>
           <div className="flex gap-1.5">
             <Input
+              id={`${editorInputBase}-icon`}
               value={iconUrl}
               onChange={(e) => setIconUrl(e.target.value)}
               placeholder={translate(
@@ -1307,9 +1289,13 @@ function CustomAgentEditor({
               variant="outline"
               size="xs"
               onClick={async () => {
-                const result = await window.api.shell.pickAgentIconImage()
-                if (result?.dataUrl) {
-                  setIconUrl(result.dataUrl)
+                try {
+                  const result = await window.api.shell.pickAgentIconImage()
+                  if (result?.dataUrl) {
+                    setIconUrl(result.dataUrl)
+                  }
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : String(err))
                 }
               }}
               className="h-7 shrink-0 gap-1 text-xs"
@@ -1320,13 +1306,14 @@ function CustomAgentEditor({
           </div>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-muted-foreground">
+          <label htmlFor={`${editorInputBase}-favicon`} className="text-xs text-muted-foreground">
             {translate(
               'auto.components.settings.AgentsPane.customAgentFaviconDomain',
               'Favicon Domain'
             )}
           </label>
           <Input
+            id={`${editorInputBase}-favicon`}
             value={faviconDomain}
             onChange={(e) => setFaviconDomain(e.target.value)}
             placeholder={translate(
@@ -1433,29 +1420,7 @@ function CustomAgentsSection({
             return (
               <div key={agent.id} className="flex flex-wrap items-start gap-3 py-3">
                 <div className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-background/50">
-                  {agent.iconUrl ? (
-                    <img
-                      src={agent.iconUrl}
-                      width={16}
-                      height={16}
-                      alt=""
-                      aria-hidden
-                      style={{ borderRadius: 2 }}
-                    />
-                  ) : agent.faviconDomain ? (
-                    <img
-                      src={`https://www.google.com/s2/favicons?domain=${agent.faviconDomain}&sz=64`}
-                      width={16}
-                      height={16}
-                      alt=""
-                      aria-hidden
-                      style={{ borderRadius: 2 }}
-                    />
-                  ) : (
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {agent.label.charAt(0).toUpperCase()}
-                    </span>
-                  )}
+                  <CustomAgentIcon agent={agent} size={16} />
                 </div>
                 <div className="min-w-0 flex-1 sm:min-w-[12rem]">
                   <div className="flex items-center gap-2">

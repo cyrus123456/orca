@@ -963,6 +963,21 @@ export default function NewWorkspaceComposerCard({
   const [selectedCustomAgentId, setSelectedCustomAgentId] = React.useState<string | null>(
     defaultCustomAgentId
   )
+  // Why: the composer mounts before settings hydrate, so a default custom agent
+  // that lands later (or is cleared after the agent is deleted) must propagate
+  // to the combobox instead of pinning a stale mount-time id that no longer
+  // resolves to a custom agent.
+  React.useEffect(() => {
+    setSelectedCustomAgentId((current) => {
+      if (defaultCustomAgentId && customAgents.some((a) => a.id === defaultCustomAgentId)) {
+        return defaultCustomAgentId
+      }
+      if (current && customAgents.some((a) => a.id === current)) {
+        return current
+      }
+      return null
+    })
+  }, [defaultCustomAgentId, customAgents])
   const handleCustomAgentSelect = React.useCallback(
     (agent: CustomAgent | null): void => {
       setSelectedCustomAgentId(agent?.id ?? null)

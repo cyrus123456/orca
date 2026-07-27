@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { CustomAgent } from '../../../../shared/types'
 
 type CustomAgentIconProps = {
@@ -16,26 +17,23 @@ type CustomAgentIconProps = {
  * updates made in settings propagate to every surface that shows the glyph.
  */
 export function CustomAgentIcon({ agent, size = 14 }: CustomAgentIconProps): React.JSX.Element {
-  if (agent.iconUrl) {
+  // Why: a remote iconUrl/favicon can 404 or be blocked; track one error flag
+  // so the <img> degrades to the letter tile instead of showing a broken icon.
+  const [imgError, setImgError] = useState(false)
+  const src = agent.iconUrl
+    ? agent.iconUrl
+    : agent.faviconDomain
+      ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(agent.faviconDomain)}&sz=64`
+      : null
+  if (src && !imgError) {
     return (
       <img
-        src={agent.iconUrl}
+        src={src}
         width={size}
         height={size}
         alt=""
         aria-hidden
-        style={{ borderRadius: 2 }}
-      />
-    )
-  }
-  if (agent.faviconDomain) {
-    return (
-      <img
-        src={`https://www.google.com/s2/favicons?domain=${agent.faviconDomain}&sz=64`}
-        width={size}
-        height={size}
-        alt=""
-        aria-hidden
+        onError={() => setImgError(true)}
         style={{ borderRadius: 2 }}
       />
     )
