@@ -1,0 +1,148 @@
+name: Build fork Windows release
+
+# Polls stablyai/orca's latest stable release. When a new stable tag appears
+# AND sync-upstream-main has already merged that version into fork main, build
+# an UNSIGNED Windows installer and publish it as a fork release tagged
+# v<version>-fork. Real-time triggers on another repo's release need a webhook
+# on upstream we can't install, so we poll hourly. Unsigned because the fork
+# has no SignPath/Apple certs — expect a Windows SmartScreen warning on first run.
+
+on:
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Force-build a specific upstream stable tag (e.g. v1.4.160). Empty = latest.
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-fork-windows-release
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    # No-op on the original repo so this file is safe if it ever lands upstream.
+    if: github.repository != 'stablyai/orca'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      build: ${{ steps.detect.outputs.build }}
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Detect upstream release and decide whether to build
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${FORCE_TAG:-}" ]]; then
+            tag="${FORCE_TAG}"
+          else
+            tag="$(gh api repos/stablyai/orca/releases/latest --jq .tag_name)"
+          fi
+          echo "Upstream latest stable: ${tag:-<none>}"
+          # Only build stable vX.Y.Z (not -rc.N); RCs are cut 2x/day and would burn CI.
+          if [[ -z "${tag:-}" || ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::notice::No stable upstream release to build (${tag:-<none>})."
+            echo "build=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${tag#v}"
+          fork_tag="v${version}-fork"
+          # Skip if the fork already built this version.
+          if gh release view "$fork_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::Fork release $fork_tag already exists; skipping."
+            echo "build=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Wait for sync-upstream-main to merge this version into fork main first.
+          pkg_version="$(jq -r .version package.json)"
+          if [[ "$pkg_version" != "$version" ]]; then
+            echo "::notice::Fork main is at v$pkg_version; sync-upstream-main hasn't merged v$version yet. Will retry next poll."
+            echo "build=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "build=true" >>"$GITHUB_OUTPUT"
+          echo "Will build fork release $fork_tag from fork main (v$pkg_version)."
+
+  build-windows:
+    needs: detect
+    if: needs.detect.outputs.build == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Cache electron-builder downloads
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-builder-win-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            electron-builder-win-
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 30
+          command: pnpm install --frozen-lockfile
+
+      - name: Build app
+        run: pnpm build:release
+        env:
+          # Fork build is unofficial: leave identity empty so the telemetry
+          # gate (IS_OFFICIAL_BUILD) short-circuits and no PostHog key is baked in.
+          ORCA_BUILD_IDENTITY: ''
+
+      - name: Build unsigned Windows installer
+        shell: pwsh
+        run: |
+          node config/scripts/ensure-native-runtime.mjs --runtime=electron
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec electron-builder --config config/electron-builder.config.cjs --win --publish never
+
+      - name: Create fork release and upload installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}-fork"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Orca fork v${VERSION} (unsigned Windows build)" \
+            --notes "Unsigned Windows build of this fork, tracking upstream v${VERSION}. Built from fork main (includes fork-specific changes like custom agents). Not code-signed — Windows SmartScreen will warn on first run." \
+            dist/orca-windows-setup.exe
