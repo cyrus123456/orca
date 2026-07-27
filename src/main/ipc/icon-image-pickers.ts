@@ -1,6 +1,6 @@
 import { ipcMain, dialog } from 'electron'
 import { basename, extname } from 'node:path'
-import { readFile, stat } from 'node:fs/promises'
+import { open } from 'node:fs/promises'
 import { MAX_REPO_ICON_UPLOAD_BYTES } from '../../shared/repo-icon'
 
 const REPO_ICON_IMAGE_MIME_TYPES: Record<string, string> = {
@@ -41,14 +41,23 @@ async function pickIconImageFile(
   if (!mimeType) {
     throw new Error(options.unsupportedError)
   }
-  const stats = await stat(filePath)
-  if (stats.size > MAX_REPO_ICON_UPLOAD_BYTES) {
-    throw new Error(options.tooLargeError)
-  }
-  const buffer = await readFile(filePath)
-  return {
-    dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
-    fileName: basename(filePath)
+  // Why: stat→readFile is a TOCTOU window — a file swap between the size check
+  // and the read can bypass the cap. Open one fd and bound the read by the
+  // limit so the size cap is enforced by the read itself, not a separate lookup.
+  const handle = await open(filePath, 'r')
+  try {
+    const probe = Buffer.alloc(MAX_REPO_ICON_UPLOAD_BYTES + 1)
+    const { bytesRead } = await handle.read(probe, 0, MAX_REPO_ICON_UPLOAD_BYTES + 1, 0)
+    if (bytesRead > MAX_REPO_ICON_UPLOAD_BYTES) {
+      throw new Error(options.tooLargeError)
+    }
+    const buffer = probe.subarray(0, bytesRead)
+    return {
+      dataUrl: `data:${mimeType};base64,${buffer.toString('base64')}`,
+      fileName: basename(filePath)
+    }
+  } finally {
+    await handle.close()
   }
 }
 

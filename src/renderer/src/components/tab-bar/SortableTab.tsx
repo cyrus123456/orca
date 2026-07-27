@@ -123,8 +123,12 @@ export default function SortableTab({
   })
 
   // Why: with a provider icon shown, strip the agent's own leading glyph so the tab doesn't show two icons for one agent.
+  // Why: a pure custom-agent tab has no tabAgent, but its generated title may
+  // still carry a leading agent glyph — strip it whenever any agent (built-in
+  // or custom) is bound so the tab doesn't render a duplicate glyph.
   const displayTitle =
-    tab.customTitle ?? (tabAgent ? stripLeadingAgentTitleDecoration(tab.title) : tab.title)
+    tab.customTitle ??
+    (tabAgent || customAgent ? stripLeadingAgentTitleDecoration(tab.title) : tab.title)
 
   const { attributes, listeners, setNodeRef } = useSortable({
     id: tab.id,

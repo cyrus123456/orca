@@ -183,9 +183,11 @@ export default function AgentCombobox({
   const handleSelect = useCallback(
     (nextValue: TuiAgent | null) => {
       onValueChange(nextValue)
-      if (nextValue !== null && onCustomAgentSelect) {
-        onCustomAgentSelect(null)
-      }
+      // Why: selecting any standard value (including Blank Terminal / null)
+      // clears a custom-agent selection so the trigger never shows a stale
+      // custom agent while value is null. Centralizing here removes the need
+      // for call sites to duplicate the clear (and forget it).
+      onCustomAgentSelect?.(null)
       setOpen(false)
       setQuery('')
       onValueSelected?.(nextValue)
@@ -328,12 +330,7 @@ export default function AgentCombobox({
                     itemValue: BLANK_VALUE,
                     isChecked: value === null && !selectedCustomAgentId,
                     isDefault: defaultAgent === 'blank',
-                    onSelect: () => {
-                      handleSelect(null)
-                      if (onCustomAgentSelect) {
-                        onCustomAgentSelect(null)
-                      }
-                    },
+                    onSelect: () => handleSelect(null),
                     onSetDefault: onSetDefault ? () => onSetDefault('blank') : undefined,
                     icon: <Terminal className="size-3.5" />,
                     label: translate(

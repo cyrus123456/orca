@@ -89,8 +89,10 @@ const terminalTabSchema = z.object({
     .catch(undefined),
   // Why: persist the custom agent id so a restored tab keeps its custom agent
   // icon. Without this, Zod strips the field on parse and the tab bar falls
-  // back to the default shell icon after session restore.
-  customLaunchAgentId: z.string().optional()
+  // back to the default shell icon after session restore. `.catch(undefined)`
+  // tolerates a null/garbage value from a corrupted session so the whole-session
+  // parse degrades to "no custom agent" instead of resetting every tab.
+  customLaunchAgentId: z.string().min(1).optional().catch(undefined)
 })
 
 // ─── Unified tab model ──────────────────────────────────────────────
@@ -129,8 +131,9 @@ const tabSchema = z.object({
   // undefined → 'terminal' in the renderer.
   viewMode: z.enum(['terminal', 'chat']).catch('terminal').optional(),
   // Why: mirror of TerminalTab.customLaunchAgentId so the unified tab model
-  // preserves the custom agent binding across session restore.
-  customLaunchAgentId: z.string().optional()
+  // preserves the custom agent binding across session restore. `.catch(...)`
+  // keeps a corrupted null/garbage id from failing the whole-session parse.
+  customLaunchAgentId: z.string().min(1).optional().catch(undefined)
 })
 
 const tabGroupSchema = z.object({

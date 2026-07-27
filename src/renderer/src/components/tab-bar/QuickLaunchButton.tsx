@@ -12,6 +12,7 @@ import type { TuiAgent, CustomAgent } from '../../../../shared/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import { filterEnabledTuiAgents } from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
+import { CustomAgentIcon } from '../agent/CustomAgentIcon'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -179,6 +180,7 @@ function QuickLaunchAgentMenuItemsInner({
         worktreeId,
         groupId,
         ...(prompt !== undefined ? { prompt } : {}),
+        ...(promptDelivery !== undefined ? { promptDelivery } : {}),
         ...(launchSource !== undefined ? { launchSource } : {}),
         ...(onPromptDelivered !== undefined ? { onPromptDelivered } : {})
       })
@@ -194,7 +196,7 @@ function QuickLaunchAgentMenuItemsInner({
       }
       onFocusTerminal(result.tabId)
     },
-    [worktreeId, groupId, onFocusTerminal, prompt, launchSource, onPromptDelivered]
+    [worktreeId, groupId, onFocusTerminal, prompt, promptDelivery, launchSource, onPromptDelivered]
   )
 
   const enabledDetectedIds = detectedIds ? filterEnabledTuiAgents(detectedIds, disabledAgents) : []
@@ -258,7 +260,7 @@ function QuickLaunchAgentMenuItemsInner({
                 { value0: agent.label }
               )}
             >
-              <CustomAgentListItemIcon agent={agent} />
+              <CustomAgentIcon agent={agent} size={14} />
               <span className="flex-1">{agent.label}</span>
             </DropdownMenuItem>
           ))}
@@ -272,38 +274,6 @@ function QuickLaunchAgentMenuItemsInner({
         {translate('auto.components.tab.bar.QuickLaunchButton.348a04c1ad', 'Agent settings…')}
       </DropdownMenuItem>
     </>
-  )
-}
-
-function CustomAgentListItemIcon({ agent }: { agent: CustomAgent }): React.JSX.Element {
-  if (agent.iconUrl) {
-    return (
-      <img
-        src={agent.iconUrl}
-        width={14}
-        height={14}
-        alt=""
-        aria-hidden
-        style={{ borderRadius: 2 }}
-      />
-    )
-  }
-  if (agent.faviconDomain) {
-    return (
-      <img
-        src={`https://www.google.com/s2/favicons?domain=${agent.faviconDomain}&sz=64`}
-        width={14}
-        height={14}
-        alt=""
-        aria-hidden
-        style={{ borderRadius: 2 }}
-      />
-    )
-  }
-  return (
-    <span className="flex size-3.5 shrink-0 items-center justify-center rounded-[3px] bg-muted text-[8px] font-bold text-muted-foreground">
-      {agent.label.charAt(0).toUpperCase()}
-    </span>
   )
 }
 
