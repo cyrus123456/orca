@@ -1,8 +1,9 @@
 name: Sync upstream main
 
-# Polls stablyai/orca (upstream) main and fast-forwards this fork's main.
-# Real-time triggers on another repo's push require a webhook on upstream,
-# which we can't install — so we poll on a schedule instead.
+# Polls stablyai/orca (upstream) main and merges new commits into this fork's main.
+# Fork main carries its own commits (features + this workflow), so we merge
+# (not fast-forward) to preserve them. Real-time triggers on another repo's push
+# require a webhook on upstream, which we can't install — so we poll instead.
 on:
   schedule:
     - cron: '17 * * * *'
@@ -38,13 +39,14 @@ jobs:
       - name: Fetch upstream main
         run: git fetch upstream main
 
-      - name: Fast-forward merge upstream/main
+      - name: Merge upstream/main into fork main
         id: merge
         run: |
           set -euo pipefail
           BEFORE=$(git rev-parse HEAD)
-          if ! git merge --ff-only upstream/main; then
-            echo "::error::Fork main has diverged from upstream/main and cannot be fast-forwarded. Resolve manually (rebase or reset to upstream/main)."
+          if ! git merge --no-edit upstream/main; then
+            echo "::error::Merge from upstream/main failed (conflicts). Aborting to keep the tree clean. Resolve conflicts in a local clone, then re-run."
+            git merge --abort
             exit 1
           fi
           AFTER=$(git rev-parse HEAD)
@@ -52,7 +54,7 @@ jobs:
             echo "Already up to date with upstream/main."
             echo "synced=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Fast-forwarded main: $BEFORE -> $AFTER"
+            echo "Merged upstream/main into fork main: $BEFORE -> $AFTER"
             echo "synced=true" >> "$GITHUB_OUTPUT"
           fi
 
