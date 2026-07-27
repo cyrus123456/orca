@@ -180,6 +180,7 @@ function QuickLaunchAgentMenuItemsInner({
         worktreeId,
         groupId,
         ...(prompt !== undefined ? { prompt } : {}),
+        ...(promptDelivery !== undefined ? { promptDelivery } : {}),
         ...(launchSource !== undefined ? { launchSource } : {}),
         ...(onPromptDelivered !== undefined ? { onPromptDelivered } : {})
       })
@@ -195,7 +196,7 @@ function QuickLaunchAgentMenuItemsInner({
       }
       onFocusTerminal(result.tabId)
     },
-    [worktreeId, groupId, onFocusTerminal, prompt, launchSource, onPromptDelivered]
+    [worktreeId, groupId, onFocusTerminal, prompt, promptDelivery, launchSource, onPromptDelivered]
   )
 
   const enabledDetectedIds = detectedIds ? filterEnabledTuiAgents(detectedIds, disabledAgents) : []
