@@ -1,0 +1,61 @@
+name: Sync upstream main
+
+# Polls stablyai/orca (upstream) main and fast-forwards this fork's main.
+# Real-time triggers on another repo's push require a webhook on upstream,
+# which we can't install — so we poll on a schedule instead.
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Skip on the original repo so this file is a no-op if it ever lands upstream.
+    if: github.repository != 'stablyai/orca'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git bot identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/stablyai/orca.git
+
+      - name: Fetch upstream main
+        run: git fetch upstream main
+
+      - name: Fast-forward merge upstream/main
+        id: merge
+        run: |
+          set -euo pipefail
+          BEFORE=$(git rev-parse HEAD)
+          if ! git merge --ff-only upstream/main; then
+            echo "::error::Fork main has diverged from upstream/main and cannot be fast-forwarded. Resolve manually (rebase or reset to upstream/main)."
+            exit 1
+          fi
+          AFTER=$(git rev-parse HEAD)
+          if [ "$BEFORE" = "$AFTER" ]; then
+            echo "Already up to date with upstream/main."
+            echo "synced=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Fast-forwarded main: $BEFORE -> $AFTER"
+            echo "synced=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push to origin main
+        if: steps.merge.outputs.synced == 'true'
+        run: git push origin main
