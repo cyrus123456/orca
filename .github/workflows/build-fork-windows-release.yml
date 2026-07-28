@@ -1,11 +1,12 @@
 name: Build fork Windows release
 
-# Polls stablyai/orca's latest stable release. When a new stable tag appears
-# AND sync-upstream-main has already merged that version into fork main, build
-# an UNSIGNED Windows installer and publish it as a fork release tagged
-# v<version>-fork. Real-time triggers on another repo's release need a webhook
-# on upstream we can't install, so we poll hourly. Unsigned because the fork
-# has no SignPath/Apple certs — expect a Windows SmartScreen warning on first run.
+# Polls stablyai/orca's latest published release (stable or RC). When a new
+# tag appears AND sync-upstream-main has already merged that version into fork
+# main, build an UNSIGNED Windows installer and publish it as a fork release
+# tagged v<version>-fork. Real-time triggers on another repo's release need a
+# webhook on upstream we can't install, so we poll hourly. Unsigned because the
+# fork has no SignPath/Apple certs — expect a Windows SmartScreen warning on
+# first run.
 
 on:
   schedule:
@@ -13,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Force-build a specific upstream stable tag (e.g. v1.4.160). Empty = latest.
+        description: Force-build a specific upstream tag (e.g. v1.4.160 or v1.4.160-rc.3). Empty = latest published.
         required: false
         type: string
         default: ''
@@ -49,12 +50,15 @@ jobs:
           if [[ -n "${FORCE_TAG:-}" ]]; then
             tag="${FORCE_TAG}"
           else
-            tag="$(gh api repos/stablyai/orca/releases/latest --jq .tag_name)"
+            # releases/latest skips prereleases; we want RC too, so filter
+            # the recent list for the first draft=false (published) release.
+            tag="$(gh api 'repos/stablyai/orca/releases?per_page=10' \
+                   --jq '[.[] | select(.draft == false) | .tag_name] | .[0] // empty')"
           fi
-          echo "Upstream latest stable: ${tag:-<none>}"
-          # Only build stable vX.Y.Z (not -rc.N); RCs are cut 2x/day and would burn CI.
-          if [[ -z "${tag:-}" || ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::notice::No stable upstream release to build (${tag:-<none>})."
+          echo "Upstream latest published: ${tag:-<none>}"
+          # Build stable vX.Y.Z or RC vX.Y.Z-rc.N — both are published releases.
+          if [[ -z "${tag:-}" || ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::notice::No published upstream release to build (${tag:-<none>})."
             echo "build=false" >>"$GITHUB_OUTPUT"
             exit 0
           fi
