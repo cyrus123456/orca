@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { inspectAttr } from 'kimi-plugin-inspect-react'
 import { createPlainNodeEntryGuardPlugin } from './build-plugins/plain-node-entry-guard'
 
 // Why: the telemetry transport is gated by two compile-time constants that
@@ -237,7 +238,7 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    plugins: [react(), tailwindcss()],
+    plugins: [react(), tailwindcss(), inspectAttr()],
     worker: {
       format: 'es'
     },
