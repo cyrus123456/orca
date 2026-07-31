@@ -10,7 +10,10 @@ import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
 import { launchAgentInNewTab, launchCustomAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
 import type { TuiAgent, CustomAgent } from '../../../../shared/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
-import { filterEnabledTuiAgents } from '../../../../shared/tui-agent-selection'
+import {
+  DEFAULT_DISABLED_TUI_AGENTS,
+  filterEnabledTuiAgents
+} from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
 import { CustomAgentIcon } from '../agent/CustomAgentIcon'
 
@@ -108,7 +111,9 @@ function QuickLaunchAgentMenuItemsInner({
   const agentDetectionTarget = useAgentDetectionTargetForWorktree(worktreeId)
   const { detectedIds } = useDetectedAgents(agentDetectionTarget)
   const defaultAgent = useAppStore((s) => s.settings?.defaultTuiAgent)
-  const disabledAgents = useAppStore((s) => s.settings?.disabledTuiAgents ?? [])
+  const disabledAgents = useAppStore(
+    (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
+  )
   const customAgents = useAppStore((s) => s.settings?.customAgents ?? [])
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
