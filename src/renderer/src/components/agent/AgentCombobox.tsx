@@ -1,8 +1,14 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { ArrowRight, ChevronsUpDown, Terminal } from 'lucide-react'
+import { ArrowRight, Check, ChevronsUpDown, Star, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Command, CommandEmpty, CommandInput, CommandList } from '@/components/ui/command'
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
 import { AgentIcon, type AgentCatalogEntry } from '@/lib/agent-catalog'
 import {
   agentPickerBlankTerminalMatches,
@@ -18,7 +24,6 @@ import {
   resolveAgentComboboxCommandState,
   updateAgentComboboxCommandValue
 } from './agent-combobox-command-state'
-import { renderItem } from './agent-combobox-item-renderer'
 import { translate } from '@/i18n/i18n'
 
 type DefaultAgentPreference = TuiAgent | 'blank' | null
@@ -34,7 +39,7 @@ type AgentComboboxProps = {
    *  currently-applied choice. */
   defaultAgent?: DefaultAgentPreference
   /** Optional handler for right-click "Set as default" action. When provided,
-   *  each list item (including Blank Terminal) gets a context menu. */
+   *  the selected trigger and each list item get a context menu. */
   onSetDefault?: (agent: DefaultAgentPreference) => void
   triggerClassName?: string
   /** When set, pressing Enter on the closed combobox trigger invokes this
@@ -54,9 +59,96 @@ type AgentComboboxProps = {
 
 const BLANK_VALUE = '__none__'
 const TRIGGER_MIN_WIDTH_CLASS = '!min-w-[260px]'
-// Why: stable reference so useMemo dependencies don't re-fire every render
-// when callers pass `customAgents` as undefined.
 const EMPTY_CUSTOM_AGENTS: readonly CustomAgent[] = []
+
+type ItemRenderArgs = {
+  key: string
+  itemValue: string
+  isChecked: boolean
+  isDefault: boolean
+  onSelect: () => void
+  onSetDefault?: () => void
+  icon: React.ReactNode
+  label: string
+}
+
+type AgentDefaultContextMenuProps = {
+  children: React.ReactNode
+  isDefault: boolean
+  onSetDefault?: () => void
+}
+
+function AgentIconLabel({
+  icon,
+  label
+}: {
+  icon: React.ReactNode
+  label: string
+}): React.JSX.Element {
+  return (
+    <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
+      <span className="inline-flex size-3.5 shrink-0 items-center justify-center [&_img]:size-3.5 [&_svg]:size-3.5!">
+        {icon}
+      </span>
+      <span className="truncate leading-none">{label}</span>
+    </span>
+  )
+}
+
+function AgentDefaultContextMenu({
+  children,
+  isDefault,
+  onSetDefault
+}: AgentDefaultContextMenuProps): React.ReactNode {
+  if (!onSetDefault) {
+    return children
+  }
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent className="z-[70]">
+        <ContextMenuItem onSelect={onSetDefault} disabled={isDefault}>
+          <Star className="size-3.5" />
+          {isDefault
+            ? translate('auto.components.agent.AgentCombobox.1b0d6965fa', 'Current default')
+            : translate('auto.components.agent.AgentCombobox.9c6b59fe58', 'Set as default')}
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  )
+}
+
+function renderItem({
+  key,
+  itemValue,
+  isChecked,
+  isDefault,
+  onSelect,
+  onSetDefault,
+  icon,
+  label
+}: ItemRenderArgs): React.ReactNode {
+  const row = (
+    <CommandItem
+      key={key}
+      value={itemValue}
+      onSelect={onSelect}
+      className="items-center gap-2 px-3 py-1.5"
+    >
+      <Check
+        className={cn('size-4 shrink-0 text-foreground', isChecked ? 'opacity-100' : 'opacity-0')}
+      />
+      <AgentIconLabel icon={icon} label={label} />
+    </CommandItem>
+  )
+  return (
+    // Why: z-[70] sits above PopoverContent's z-[60] so the right-click menu
+    // renders in front of the still-open combobox popover instead of behind it.
+    <AgentDefaultContextMenu key={key} isDefault={isDefault} onSetDefault={onSetDefault}>
+      {row}
+    </AgentDefaultContextMenu>
+  )
+}
 
 export default function AgentCombobox({
   agents,
@@ -89,6 +181,7 @@ export default function AgentCombobox({
     () => (value ? (agents.find((agent) => agent.id === value) ?? null) : null),
     [agents, value]
   )
+  const selectedDefaultPreference = value ?? (allowBlankTerminal ? 'blank' : null)
   const filteredAgents = useMemo(() => searchAgentPickerEntries(agents, query), [agents, query])
   const customAgentsList = customAgents ?? EMPTY_CUSTOM_AGENTS
   const filteredCustomAgents = useMemo(
@@ -254,47 +347,61 @@ export default function AgentCombobox({
   )
 
   return (
-    <div className="flex w-full items-center">
+    // Why: min-w-0 lets full-width form rows shrink; plain flex+items-center left the
+    // trigger free to overflow its dialog column and look misaligned with Project/Name.
+    <div className="min-w-0 w-full">
       <Popover open={open} onOpenChange={handleOpenChange}>
-        <PopoverTrigger asChild>
-          <Button
-            ref={triggerRef}
-            type="button"
-            variant="outline"
-            role="combobox"
-            aria-expanded={open}
-            onKeyDown={handleTriggerKeyDown}
-            className={cn(
-              // Why: callers sometimes pass `min-w-0` for grid layouts, but
-              // the compact trigger still needs room for "GitHub Copilot".
-              'h-8 justify-between px-3 text-xs font-normal',
-              triggerClassName,
-              !allowNarrowTrigger && TRIGGER_MIN_WIDTH_CLASS
-            )}
-            data-agent-combobox-root="true"
-          >
-            {selectedCustomAgent ? (
-              <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
-                <CustomAgentIcon agent={selectedCustomAgent} />
-                <span className="truncate">{selectedCustomAgent.label}</span>
-              </span>
-            ) : selectedAgent ? (
-              <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
-                <AgentIcon agent={selectedAgent.id} />
-                <span className="truncate">{selectedAgent.label}</span>
-              </span>
-            ) : (
-              <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
-                <Terminal className="size-3.5" />
-                <span className="truncate">
-                  {emptyLabel ??
-                    translate('auto.components.agent.AgentCombobox.986f946354', 'Blank Terminal')}
-                </span>
-              </span>
-            )}
-            <ChevronsUpDown className="size-3.5 opacity-50" />
-          </Button>
-        </PopoverTrigger>
+        <AgentDefaultContextMenu
+          isDefault={
+            selectedDefaultPreference !== null && defaultAgent === selectedDefaultPreference
+          }
+          onSetDefault={
+            onSetDefault && selectedDefaultPreference !== null
+              ? () => onSetDefault(selectedDefaultPreference)
+              : undefined
+          }
+        >
+          <PopoverTrigger asChild>
+            <Button
+              ref={triggerRef}
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={open}
+              onKeyDown={handleTriggerKeyDown}
+              className={cn(
+                // Why: callers sometimes pass `min-w-0` for grid layouts, but
+                // the compact trigger still needs room for "GitHub Copilot".
+                // py-0 clears the default size's py-2 so icon+label center in h-8/h-9.
+                'h-8 justify-between px-3 py-0 text-xs font-normal',
+                triggerClassName,
+                !allowNarrowTrigger && TRIGGER_MIN_WIDTH_CLASS
+              )}
+              data-agent-combobox-root="true"
+            >
+              {selectedCustomAgent ? (
+                <AgentIconLabel
+                  icon={<CustomAgentIcon agent={selectedCustomAgent} />}
+                  label={selectedCustomAgent.label}
+                />
+              ) : selectedAgent ? (
+                <AgentIconLabel
+                  icon={<AgentIcon agent={selectedAgent.id} size={14} />}
+                  label={selectedAgent.label}
+                />
+              ) : (
+                <AgentIconLabel
+                  icon={<Terminal className="size-3.5" />}
+                  label={
+                    emptyLabel ??
+                    translate('auto.components.agent.AgentCombobox.986f946354', 'Blank Terminal')
+                  }
+                />
+              )}
+              <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+        </AgentDefaultContextMenu>
         <PopoverContent
           align="start"
           className={cn(
