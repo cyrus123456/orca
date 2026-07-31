@@ -52,15 +52,10 @@ jobs:
             tag="${FORCE_TAG}"
             release_body="$(gh api "repos/stablyai/orca/releases/tags/${FORCE_TAG}" --jq '.body // ""' 2>/dev/null || echo '')"
           else
-            # GitHub returns releases newest-first by created_at, so RCs
-            # published after a stable release appear before it. Separate
-            # stable from RC and prefer the latest non-RC stable release.
+            # GitHub returns releases newest-first by created_at. Pick the
+            # latest published release whether stable or RC.
             tag="$(gh api 'repos/stablyai/orca/releases?per_page=20' \
-              --jq '[.[] | select(.draft == false and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].tag_name // empty')"
-            if [[ -z "${tag:-}" ]]; then
-              tag="$(gh api 'repos/stablyai/orca/releases?per_page=20' \
-                --jq '[.[] | select(.draft == false and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+-rc\\.[0-9]+$")))] | .[0].tag_name // empty')"
-            fi
+              --jq '[.[] | select(.draft == false and (.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$")))] | .[0].tag_name // empty')"
             release_body="$(gh api "repos/stablyai/orca/releases/tags/${tag}" --jq '.body // ""' 2>/dev/null || echo '')"
           fi
           echo "Upstream latest published: ${tag:-<none>}"
