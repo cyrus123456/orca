@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  workflows: write
 
 concurrency:
   group: sync-upstream-main
@@ -25,6 +26,11 @@ jobs:
       - name: Checkout fork main
         uses: actions/checkout@v6
         with:
+          # GITHUB_TOKEN can't push changes that touch .github/workflows/* —
+          # GitHub rejects it server-side regardless of the permissions block.
+          # Use a PAT with `workflow` scope so upstream merges carrying workflow
+          # file changes can push. Falls back to the default token when unset.
+          token: ${{ secrets.SYNC_TOKEN || github.token }}
           ref: main
           fetch-depth: 0
 
