@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: write
-  workflows: write
+  actions: write
 
 concurrency:
   group: sync-upstream-main
