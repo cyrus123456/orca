@@ -172,4 +172,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Orca fork v${VERSION} (unsigned Windows build)" \
             --notes "$notes" \
-            dist/orca-windows-setup.exe
+            dist/orca-windows-setup.exe \
+            dist/orca-windows-setup.exe.blockmap \
+            dist/latest.yml
