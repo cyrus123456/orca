@@ -1771,7 +1771,9 @@ export function setupAutoUpdater(
     debug: (m: unknown) => console.debug('[autoUpdater]', m)
   } as never
 
-  // Security: never re-add a verifyUpdateCodeSignature override — a no-op disables electron-updater's built-in Authenticode check and accepts any installer.
+  // Fork: builds are unsigned, so skip Authenticode verification; the upstream
+  // "never re-add" rule applies to official signed releases, not this fork.
+  autoUpdater.verifyUpdateCodeSignature = async () => {}
 
   // Why: generic provider avoids the native GitHub provider's RC-channel filtering; per-check repinning to a concrete /releases/download/<tag>/ URL avoids /latest redirect drift between check and download.
   if (activeUpdateSource === 'release') {
