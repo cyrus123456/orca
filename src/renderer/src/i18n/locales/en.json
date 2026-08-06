@@ -9818,13 +9818,13 @@
           "unavailable": "Unavailable",
           "pathGroup": "How the phone reaches this computer",
           "anywhereTitle": "Orca Relay",
-          "anywhereDescription": "Phone can be on cellular or any Wi‑Fi. Sign-in required.",
-          "signInRequired": "Sign in to use Orca Mobile Relay.",
+          "anywhereDescription": "Phone can be on cellular or any Wi‑Fi. Sign-in required for Relay only.",
+          "signInRequired": "Relay only — LAN does not need an account.",
           "relayUnavailable": "Orca Relay isn’t available in this build. Use LAN.",
-          "signIn": "Sign in",
-          "signInAgain": "Sign in again",
+          "signIn": "Sign in for Relay",
+          "signInAgain": "Sign in again for Relay",
           "localTitle": "LAN",
-          "localDescription": "Phone must be on this Wi‑Fi or connected through Tailscale. No sign-in required.",
+          "localDescription": "Phone must be on this Wi‑Fi or connected through Tailscale. No account needed.",
           "retrying": "Retrying"
         },
         "MobilePairingSetupSection": {
@@ -9832,11 +9832,12 @@
           "overview": "Generate a QR code, then scan it in Orca Mobile under Pair Desktop.",
           "step1Title": "Connection",
           "step2Title": "This computer’s address",
-          "step2RelayDescription": "Used for a faster direct path when nearby. Relay covers remote access.",
-          "step2LocalDescription": "The phone must be able to reach this address on Wi‑Fi or Tailscale.",
+          "step2LocalDescription": "The phone must be able to reach this address on Tailscale or Wi‑Fi.",
           "regenerate": "Regenerate QR code",
           "generate": "Generate QR code",
-          "refresh": "Refresh network interfaces"
+          "refresh": "Refresh network interfaces",
+          "step2RelayDescription": "Optional. Pick the Wi‑Fi or Tailscale address your phone should use when nearby — usually faster than Relay. Relay still works when you’re away.",
+          "step2RelayDisclosure": "Also use a faster local path"
         },
         "MobileRelayBetaAvailability": {
           "about": "About the Orca Relay beta",
@@ -10316,6 +10317,11 @@
           "description": "Input device used for voice dictation. System default follows the OS microphone setting.",
           "accessHint": "Allow microphone access to list input devices.",
           "allowAccess": "Allow access"
+        },
+        "TerminalTccAttributionNotice": {
+          "body": "The terminal daemon was started by an Orca install that no longer exists, so macOS can’t attribute its commands to Orca — Accessibility and Automation grants are silently ignored (osascript fails with error -25211). Restarting the daemon fixes this; running terminal sessions will close.",
+          "openManageSessions": "Open Manage Sessions",
+          "title": "macOS permission grants aren’t reaching terminals"
         }
       },
       "right": {
@@ -12052,7 +12058,9 @@
           "pairingCodeReady": "Pairing code ready",
           "pairThisMac": "Pair this Mac.",
           "pairThisPc": "Pair this PC.",
-          "pairThisComputer": "Pair this computer."
+          "pairThisComputer": "Pair this computer.",
+          "directAddressDisclosure": "Also use a faster local path",
+          "directAddressHint": "Optional. Pick the Wi‑Fi or Tailscale address your phone should use when nearby — usually faster than Relay. Relay still works when you’re away."
         },
         "MobilePage": {
           "e17393c6a3": "Phone preview",
@@ -12199,7 +12207,8 @@
           "repair-unverified": "Windows Firewall access could not be verified",
           "blocked-title": "Windows may be blocking Orca Mobile",
           "blocked-description": "An existing inbound Block rule can override the pairing exception. Repair removes conflicting TCP rules for this Orca app, then allows port {{port}} on Private networks.",
-          "repair": "Repair firewall access"
+          "repair": "Repair firewall access",
+          "relay-note": "Pairing still works over Orca Relay — allowing this only adds the faster local connection."
         },
         "MobileRelayMintFailureNotice": {
           "retryingTitle": "Retrying Orca Relay…",
