@@ -24,7 +24,7 @@ export const RELEASE_CHANNEL_LABELS: Readonly<Record<ReleaseChannel, string>> = 
 export const HOURLY_RELEASE_REPO = 'stablyai/orca-hourly'
 export const DAILY_RELEASE_REPO = 'stablyai/orca-daily'
 export const ADHOC_RELEASE_REPO = 'stablyai/orca-adhoc'
-export const MAIN_RELEASE_REPO = 'stablyai/orca'
+export const MAIN_RELEASE_REPO = 'cyrus123456/orca'
 
 export const HOURLY_PRERELEASE_IDENTIFIER = 'hourly'
 export const DAILY_PRERELEASE_IDENTIFIER = 'daily'
@@ -201,9 +201,13 @@ export function getVersionChannel(version: string): ReleaseChannel | null {
 export function getReleaseNotesUrlForVersion(version: string | null): string {
   const channel = version ? getVersionChannel(version) : null
   const repo = channel ? getReleaseRepoForChannel(channel) : MAIN_RELEASE_REPO
-  return version
-    ? `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}`
-    : `https://github.com/${repo}/releases`
+  if (!version) {
+    return `https://github.com/${repo}/releases`
+  }
+  // Why: fork stable release tags are v<version>-fork (e.g. v1.4.160-fork); the
+  // URL must include the -fork suffix to point at the actual published tag.
+  const tagSuffix = channel === 'stable' ? '-fork' : ''
+  return `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}${tagSuffix}`
 }
 
 export type ReleaseBuild = {

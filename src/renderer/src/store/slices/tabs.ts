@@ -670,7 +670,8 @@ export function projectWorktreeTabModelReconciliation(
             customLabel: tab.customTitle,
             color: tab.color,
             sortOrder: tab.sortOrder,
-            createdAt: tab.createdAt
+            createdAt: tab.createdAt,
+            ...(tab.customLaunchAgentId ? { customLaunchAgentId: tab.customLaunchAgentId } : {})
           }))
   const reconciledUnifiedTabs =
     restoredLegacyTabs.length > 0 ? [...unifiedTabs, ...restoredLegacyTabs] : unifiedTabs

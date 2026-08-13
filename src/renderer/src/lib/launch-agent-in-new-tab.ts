@@ -272,3 +272,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
     ...(promptDeliveryResult ? { promptDeliveryResult } : {})
   }
 }
+
+export type LaunchCustomAgentResult = {
+  tabId: string
+} | null
+
+export { launchCustomAgentInNewTab } from './launch-custom-agent-in-new-tab'

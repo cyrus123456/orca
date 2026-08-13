@@ -1,6 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
-import type { GlobalSettings } from '../../../../shared/types'
+import type { CustomAgent, GlobalSettings } from '../../../../shared/types'
 import { toast } from 'sonner'
 import {
   clearRuntimeCompatibilityCache,
@@ -101,6 +101,54 @@ function normalizeSettingsUpdates(
   if ('agentDefaultEnv' in updates) {
     sanitizedUpdates.agentDefaultEnv = normalizeTuiAgentEnvRecord(updates.agentDefaultEnv)
     sanitizedUpdates.agentYoloDefaultsMigrated = true
+  }
+  if ('customAgents' in updates) {
+    const raw = Array.isArray(updates.customAgents) ? updates.customAgents : []
+    const validCustomAgents = raw.filter(
+      (a): a is NonNullable<typeof a> =>
+        a != null &&
+        typeof a.id === 'string' &&
+        a.id.trim() !== '' &&
+        typeof a.label === 'string' &&
+        typeof a.cmd === 'string' &&
+        a.label.trim() !== '' &&
+        a.cmd.trim() !== ''
+    )
+    // Why: last-write-wins dedup by trimmed id so a re-imported agent
+    // replaces the prior entry instead of producing duplicate ids, and
+    // type-guard every optional field so a non-string value (e.g. a number
+    // sneaking in via {args: 1}) can't throw inside .trim() and abort the
+    // whole settings update.
+    sanitizedUpdates.customAgents = validCustomAgents.reduce<CustomAgent[]>((acc, a) => {
+      const id = a.id.trim()
+      const envRaw = a.env
+      const env =
+        envRaw && typeof envRaw === 'object' && !Array.isArray(envRaw)
+          ? Object.fromEntries(
+              Object.entries(envRaw).filter(
+                (entry): entry is [string, string] => typeof entry[1] === 'string'
+              )
+            )
+          : undefined
+      const entry: CustomAgent = {
+        id,
+        label: a.label.trim(),
+        cmd: a.cmd.trim(),
+        ...(typeof a.args === 'string' && a.args.trim() ? { args: a.args.trim() } : {}),
+        ...(env && Object.keys(env).length > 0 ? { env } : {}),
+        ...(typeof a.iconUrl === 'string' && a.iconUrl.trim() ? { iconUrl: a.iconUrl.trim() } : {}),
+        ...(typeof a.faviconDomain === 'string' && a.faviconDomain.trim()
+          ? { faviconDomain: a.faviconDomain.trim() }
+          : {})
+      }
+      const existingIndex = acc.findIndex((c) => c.id === id)
+      if (existingIndex !== -1) {
+        acc[existingIndex] = entry
+      } else {
+        acc.push(entry)
+      }
+      return acc
+    }, [])
   }
   if ('uiLanguage' in updates) {
     sanitizedUpdates.uiLanguage = normalizeUiLanguage(updates.uiLanguage)

@@ -80,6 +80,9 @@ design-docs/
 .context/
 .atl/
 
+# TRAE understand skill intermediate cache (machine-local, hundreds of batch JSONs)
+.ua/
+
 # Machine-local agent hook endpoint files may contain auth tokens.
 /agent-hooks/
 

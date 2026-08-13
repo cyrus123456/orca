@@ -24,6 +24,7 @@ import {
   filterEnabledTuiAgents
 } from '../../../shared/tui-agent-selection'
 import { useAppStore } from '@/store'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
 import {
@@ -42,7 +43,8 @@ import type {
   SetupAgentStartupPolicy,
   OrcaHooks,
   SparsePreset,
-  TuiAgent
+  TuiAgent,
+  CustomAgent
 } from '../../../shared/types'
 import SparseCheckoutPresetSelect from '@/components/sparse/SparseCheckoutPresetSelect'
 import SmartWorkspaceNameField, {
@@ -139,7 +141,7 @@ type NewWorkspaceComposerCardProps = {
   createDisabled: boolean
   projectError: string | null
   creating: boolean
-  onCreate: () => void
+  onCreate: (customLaunchAgentId?: string | null) => void
   note: string
   onNoteChange: (value: string) => void
   setupConfig: SetupConfig | null
@@ -385,7 +387,45 @@ export default function NewWorkspaceComposerCard({
   const disabledTuiAgents = useAppStore(
     (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
   )
+  const customAgents = useAppStore(useShallow((s) => s.settings?.customAgents ?? []))
+  const defaultCustomAgentId = useAppStore((s) => s.settings?.defaultCustomAgentId ?? null)
   const updateSettings = useAppStore((s) => s.updateSettings)
+  const [selectedCustomAgentId, setSelectedCustomAgentId] = React.useState<string | null>(
+    defaultCustomAgentId
+  )
+  // Why: the composer mounts before settings hydrate, so a default custom agent
+  // that lands later (or is cleared after the agent is deleted) must propagate
+  // to the combobox instead of pinning a stale mount-time id that no longer
+  // resolves to a custom agent.
+  React.useEffect(() => {
+    setSelectedCustomAgentId((current) => {
+      if (defaultCustomAgentId && customAgents.some((a) => a.id === defaultCustomAgentId)) {
+        return defaultCustomAgentId
+      }
+      if (current && customAgents.some((a) => a.id === current)) {
+        return current
+      }
+      return null
+    })
+  }, [defaultCustomAgentId, customAgents])
+  const handleCustomAgentSelect = React.useCallback(
+    (agent: CustomAgent | null): void => {
+      setSelectedCustomAgentId(agent?.id ?? null)
+      if (agent !== null) {
+        onQuickAgentChange(null)
+      }
+    },
+    [onQuickAgentChange]
+  )
+  const handleQuickAgentChange = React.useCallback(
+    (next: TuiAgent | null): void => {
+      if (next !== null && selectedCustomAgentId !== null) {
+        setSelectedCustomAgentId(null)
+      }
+      onQuickAgentChange(next)
+    },
+    [onQuickAgentChange, selectedCustomAgentId]
+  )
   const nameInputFocusFrameRef = React.useRef<number | null>(null)
   const branchNameInputId = React.useId()
   const submitShortcutModifierLabel = getScreenSubmitModifierLabel()
@@ -898,14 +938,16 @@ export default function NewWorkspaceComposerCard({
           <AgentCombobox
             agents={visibleQuickAgents}
             value={quickAgent}
-            onValueChange={onQuickAgentChange}
+            onValueChange={handleQuickAgentChange}
             onOpenManageAgents={onOpenAgentSettings}
             defaultAgent={defaultTuiAgent}
             onSetDefault={handleSetDefaultAgent}
-            // Why: match Project/Run-on — full-width form row, no 260px min that can overflow the dialog column.
             allowNarrowTrigger
             triggerClassName="h-9 w-full min-w-0 border-input text-sm focus:border-ring focus:ring-[3px] focus:ring-ring/50"
-            onTriggerEnter={createDisabled ? undefined : onCreate}
+            onTriggerEnter={createDisabled ? undefined : () => void onCreate(selectedCustomAgentId)}
+            customAgents={customAgents}
+            selectedCustomAgentId={selectedCustomAgentId}
+            onCustomAgentSelect={handleCustomAgentSelect}
           />
         </div>
 
@@ -1217,7 +1259,7 @@ export default function NewWorkspaceComposerCard({
           </button>
         ) : null}
         <Button
-          onClick={() => void onCreate()}
+          onClick={() => void onCreate(selectedCustomAgentId)}
           disabled={createDisabled}
           size="sm"
           className="text-xs"

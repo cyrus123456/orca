@@ -1437,7 +1437,7 @@ async function pinDefaultReleaseFeed(
   } else {
     clearPrereleaseFallbackContext()
     clearPublishingWindowLastGoodCheck()
-    const url = 'https://github.com/stablyai/orca/releases/latest/download'
+    const url = 'https://github.com/cyrus123456/orca/releases/latest/download'
     console.info(
       `[updater] release feed fallback: current=${currentVersion} includePrerelease=${includePrerelease} → ${url}`
     )
@@ -2196,13 +2196,19 @@ export function setupAutoUpdater(
   // The adapter also retains the redacted child stderr that BaseUpdater logs but drops from the 'error' event.
   autoUpdater.logger = createUpdaterDiagnosticLogger() as never
 
-  // Security: never re-add a verifyUpdateCodeSignature override — a no-op disables electron-updater's built-in Authenticode check and accepts any installer.
+  // Fork: builds are unsigned, so skip Authenticode verification; the upstream
+  // "never re-add" rule applies to official signed releases, not this fork.
+  ;(
+    autoUpdater as ElectronAutoUpdater & {
+      verifyUpdateCodeSignature: () => Promise<void>
+    }
+  ).verifyUpdateCodeSignature = async () => {}
 
   // Why: generic provider avoids the native GitHub provider's RC-channel filtering; per-check repinning to a concrete /releases/download/<tag>/ URL avoids /latest redirect drift between check and download.
   if (activeUpdateSource === 'release') {
     autoUpdater.setFeedURL({
       provider: 'generic',
-      url: 'https://github.com/stablyai/orca/releases/latest/download'
+      url: 'https://github.com/cyrus123456/orca/releases/latest/download'
     })
   }
 

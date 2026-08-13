@@ -2934,7 +2934,8 @@
             "ec2adf093e": "新規ターミナルで {{value0}} を起動",
             "465e432ef1": "{{value0}} の起動コマンドを作成できませんでした。",
             "e518f544b1": "Agent が検出されませんでした",
-            "8dea9b5cdf": "有効な Agent がありません"
+            "8dea9b5cdf": "有効な Agent がありません",
+            "customAgents": "カスタム agents"
           },
           "RecentTabSwitcher": {
             "329638ff6f": "タブの切り替え",
@@ -5372,7 +5373,33 @@
           "03e1a5081a": "{{value0}} 上",
           "25a41a9aad": "アクティブなサーバーにインストールされている Agent を再検出",
           "remoteDetectionFailed": "インストールされている Agent を検出できませんでした。ホストへの接続を確認して、もう一度お試しください。",
-          "retryDetection": "再試行"
+          "retryDetection": "再試行",
+          "customAgentsTitle": "カスタム Agent",
+          "customAgentsDescription": "組み込みカタログにない独自の CLI agent を追加します。",
+          "customAgentAdd": "追加",
+          "customAgentName": "名前",
+          "customAgentNamePlaceholder": "マイ Agent",
+          "customAgentCmd": "コマンド",
+          "customAgentCmdPlaceholder": "my-agent",
+          "customAgentArgs": "引数",
+          "customAgentArgsPlaceholder": "--flag value",
+          "customAgentEnv": "環境変数（1行に1つずつ KEY=VALUE）",
+          "customAgentEnvPlaceholder": "API_KEY=xxx\nMODEL=gpt-4",
+          "customAgentNameRequired": "名前は必須です",
+          "customAgentCmdRequired": "コマンドは必須です",
+          "customAgentEnvFormat": "環境変数は1行につき1つの KEY=VALUE 形式にしてください",
+          "customAgentCancel": "キャンセル",
+          "customAgentSave": "保存",
+          "customAgentBadge": "カスタム",
+          "customAgentIconUrl": "アイコン URL",
+          "customAgentIconUrlPlaceholder": "https://example.com/icon.png",
+          "customAgentFaviconDomain": "Favicon ドメイン",
+          "customAgentFaviconDomainPlaceholder": "example.com",
+          "customAgentIconBrowse": "参照",
+          "customAgentEdit": "カスタム agent を編集",
+          "customAgentDelete": "カスタム agent を削除",
+          "customAgentsEmpty": "カスタム agent がありません。「追加」をクリックして作成してください。",
+          "customAgentsDefaultGroup": "カスタム agents"
         },
         "AppIconSelector": {
           "d5a112dc9b": "次へのアイコン",
@@ -13865,7 +13892,8 @@
           "579c768bde": "検索に一致する Agent はありません。",
           "48c6a5a9b4": "Agent を検索…",
           "9c6b59fe58": "デフォルトとして設定",
-          "1b0d6965fa": "現在のデフォルト"
+          "1b0d6965fa": "現在のデフォルト",
+          "customAgents": "カスタム agents"
         },
         "AgentSettingsDialog": {
           "50cdb57c03": "AI Agent を管理し、デフォルトを設定し、コマンドをカスタマイズします。",

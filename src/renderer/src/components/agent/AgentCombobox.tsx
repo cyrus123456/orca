@@ -1,28 +1,19 @@
 import React, { useCallback, useMemo, useState } from 'react'
-import { ArrowRight, Check, ChevronsUpDown, Star, Terminal } from 'lucide-react'
+import { ArrowRight, ChevronsUpDown, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Command,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList
-} from '@/components/ui/command'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger
-} from '@/components/ui/context-menu'
+import { Command, CommandEmpty, CommandInput, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { AgentIcon, type AgentCatalogEntry } from '@/lib/agent-catalog'
 import {
   agentPickerBlankTerminalMatches,
   getAgentPickerCommandValue,
-  searchAgentPickerEntries
+  searchAgentPickerEntries,
+  searchCustomAgentPickerEntries
 } from '@/lib/agent-picker-search'
 import { cn } from '@/lib/utils'
-import type { TuiAgent } from '../../../../shared/types'
+import type { CustomAgent, TuiAgent } from '../../../../shared/types'
+import { CustomAgentIcon } from './CustomAgentIcon'
+import { AgentDefaultContextMenu, AgentIconLabel, renderItem } from './agent-combobox-item-renderer'
 import {
   createAgentComboboxCommandState,
   resolveAgentComboboxCommandState,
@@ -53,99 +44,17 @@ type AgentComboboxProps = {
   allowNarrowTrigger?: boolean
   allowBlankTerminal?: boolean
   emptyLabel?: string
+  /** User-defined custom agents shown in a separate section of the dropdown. */
+  customAgents?: CustomAgent[]
+  /** ID of the currently selected custom agent, or null when none is selected. */
+  selectedCustomAgentId?: string | null
+  /** Called when the user picks a custom agent (or null to clear the selection). */
+  onCustomAgentSelect?: (agent: CustomAgent | null) => void
 }
 
 const BLANK_VALUE = '__none__'
 const TRIGGER_MIN_WIDTH_CLASS = '!min-w-[260px]'
-
-type ItemRenderArgs = {
-  key: string
-  itemValue: string
-  isChecked: boolean
-  isDefault: boolean
-  onSelect: () => void
-  onSetDefault?: () => void
-  icon: React.ReactNode
-  label: string
-}
-
-type AgentDefaultContextMenuProps = {
-  children: React.ReactNode
-  isDefault: boolean
-  onSetDefault?: () => void
-}
-
-function AgentIconLabel({
-  icon,
-  label
-}: {
-  icon: React.ReactNode
-  label: string
-}): React.JSX.Element {
-  return (
-    <span className="inline-flex min-w-0 flex-1 items-center gap-1.5">
-      <span className="inline-flex size-3.5 shrink-0 items-center justify-center [&_img]:size-3.5 [&_svg]:size-3.5!">
-        {icon}
-      </span>
-      <span className="truncate leading-none">{label}</span>
-    </span>
-  )
-}
-
-function AgentDefaultContextMenu({
-  children,
-  isDefault,
-  onSetDefault
-}: AgentDefaultContextMenuProps): React.ReactNode {
-  if (!onSetDefault) {
-    return children
-  }
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="z-[70]">
-        <ContextMenuItem onSelect={onSetDefault} disabled={isDefault}>
-          <Star className="size-3.5" />
-          {isDefault
-            ? translate('auto.components.agent.AgentCombobox.1b0d6965fa', 'Current default')
-            : translate('auto.components.agent.AgentCombobox.9c6b59fe58', 'Set as default')}
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  )
-}
-
-function renderItem({
-  key,
-  itemValue,
-  isChecked,
-  isDefault,
-  onSelect,
-  onSetDefault,
-  icon,
-  label
-}: ItemRenderArgs): React.ReactNode {
-  const row = (
-    <CommandItem
-      key={key}
-      value={itemValue}
-      onSelect={onSelect}
-      className="items-center gap-2 px-3 py-1.5"
-    >
-      <Check
-        className={cn('size-4 shrink-0 text-foreground', isChecked ? 'opacity-100' : 'opacity-0')}
-      />
-      <AgentIconLabel icon={icon} label={label} />
-    </CommandItem>
-  )
-  return (
-    // Why: z-[70] sits above PopoverContent's z-[60] so the right-click menu
-    // renders in front of the still-open combobox popover instead of behind it.
-    <AgentDefaultContextMenu key={key} isDefault={isDefault} onSetDefault={onSetDefault}>
-      {row}
-    </AgentDefaultContextMenu>
-  )
-}
+const EMPTY_CUSTOM_AGENTS: readonly CustomAgent[] = []
 
 export default function AgentCombobox({
   agents,
@@ -159,7 +68,10 @@ export default function AgentCombobox({
   onTriggerEnter,
   allowNarrowTrigger = false,
   allowBlankTerminal = true,
-  emptyLabel
+  emptyLabel,
+  customAgents,
+  selectedCustomAgentId,
+  onCustomAgentSelect
 }: AgentComboboxProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -177,6 +89,18 @@ export default function AgentCombobox({
   )
   const selectedDefaultPreference = value ?? (allowBlankTerminal ? 'blank' : null)
   const filteredAgents = useMemo(() => searchAgentPickerEntries(agents, query), [agents, query])
+  const customAgentsList = customAgents ?? EMPTY_CUSTOM_AGENTS
+  const filteredCustomAgents = useMemo(
+    () => searchCustomAgentPickerEntries(customAgentsList, query),
+    [customAgentsList, query]
+  )
+  const selectedCustomAgent = useMemo<CustomAgent | null>(
+    () =>
+      selectedCustomAgentId
+        ? (customAgentsList.find((a) => a.id === selectedCustomAgentId) ?? null)
+        : null,
+    [customAgentsList, selectedCustomAgentId]
+  )
   const blankMatchesQuery = useMemo(
     () => allowBlankTerminal && agentPickerBlankTerminalMatches(query),
     [allowBlankTerminal, query]
@@ -186,6 +110,8 @@ export default function AgentCombobox({
     blankMatchesQuery,
     currentValue: value,
     filteredAgents,
+    filteredCustomAgents,
+    selectedCustomAgentId,
     rawQuery: query
   })
   const resolvedCommandState = resolveAgentComboboxCommandState(
@@ -242,23 +168,43 @@ export default function AgentCombobox({
     (nextOpen: boolean) => {
       setOpen(nextOpen)
       if (nextOpen) {
-        setCommandState(createAgentComboboxCommandState(value ?? BLANK_VALUE))
+        setCommandState(
+          createAgentComboboxCommandState(selectedCustomAgentId ?? value ?? BLANK_VALUE)
+        )
         return
       }
       cancelFocusFrame()
       setQuery('')
     },
-    [cancelFocusFrame, value]
+    [cancelFocusFrame, value, selectedCustomAgentId]
   )
 
   const handleSelect = useCallback(
     (nextValue: TuiAgent | null) => {
       onValueChange(nextValue)
+      // Why: selecting any standard value (including Blank Terminal / null)
+      // clears a custom-agent selection so the trigger never shows a stale
+      // custom agent while value is null. Centralizing here removes the need
+      // for call sites to duplicate the clear (and forget it).
+      onCustomAgentSelect?.(null)
       setOpen(false)
       setQuery('')
       onValueSelected?.(nextValue)
     },
-    [onValueChange, onValueSelected]
+    [onValueChange, onValueSelected, onCustomAgentSelect]
+  )
+
+  const handleCustomAgentSelect = useCallback(
+    (agent: CustomAgent | null) => {
+      onCustomAgentSelect?.(agent)
+      if (agent !== null) {
+        onValueChange(null)
+      }
+      setOpen(false)
+      setQuery('')
+      onValueSelected?.(null)
+    },
+    [onCustomAgentSelect, onValueChange, onValueSelected]
   )
 
   // Why: mirror RepoCombobox's trigger-keydown handling — the button-style
@@ -285,7 +231,9 @@ export default function AgentCombobox({
       }
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         event.preventDefault()
-        setCommandState(createAgentComboboxCommandState(value ?? BLANK_VALUE))
+        setCommandState(
+          createAgentComboboxCommandState(selectedCustomAgentId ?? value ?? BLANK_VALUE)
+        )
         setOpen(true)
         return
       }
@@ -294,12 +242,14 @@ export default function AgentCombobox({
       }
       if (event.key.length === 1 && /\S/.test(event.key)) {
         event.preventDefault()
-        setCommandState(createAgentComboboxCommandState(value ?? BLANK_VALUE))
+        setCommandState(
+          createAgentComboboxCommandState(selectedCustomAgentId ?? value ?? BLANK_VALUE)
+        )
         setQuery(event.key)
         setOpen(true)
       }
     },
-    [open, onTriggerEnter, value]
+    [open, onTriggerEnter, value, selectedCustomAgentId]
   )
 
   return (
@@ -335,7 +285,12 @@ export default function AgentCombobox({
               )}
               data-agent-combobox-root="true"
             >
-              {selectedAgent ? (
+              {selectedCustomAgent ? (
+                <AgentIconLabel
+                  icon={<CustomAgentIcon agent={selectedCustomAgent} />}
+                  label={selectedCustomAgent.label}
+                />
+              ) : selectedAgent ? (
                 <AgentIconLabel
                   icon={<AgentIcon agent={selectedAgent.id} size={14} />}
                   label={selectedAgent.label}
@@ -386,7 +341,7 @@ export default function AgentCombobox({
                 ? renderItem({
                     key: BLANK_VALUE,
                     itemValue: BLANK_VALUE,
-                    isChecked: value === null,
+                    isChecked: value === null && !selectedCustomAgentId,
                     isDefault: defaultAgent === 'blank',
                     onSelect: () => handleSelect(null),
                     onSetDefault: onSetDefault ? () => onSetDefault('blank') : undefined,
@@ -401,7 +356,7 @@ export default function AgentCombobox({
                 renderItem({
                   key: agent.id,
                   itemValue: agent.id,
-                  isChecked: value === agent.id,
+                  isChecked: value === agent.id && !selectedCustomAgentId,
                   isDefault: defaultAgent === agent.id,
                   onSelect: () => handleSelect(agent.id),
                   onSetDefault: onSetDefault ? () => onSetDefault(agent.id) : undefined,
@@ -409,6 +364,24 @@ export default function AgentCombobox({
                   label: agent.label
                 })
               )}
+              {filteredCustomAgents.length > 0 ? (
+                <>
+                  <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
+                    {translate('auto.components.agent.AgentCombobox.customAgents', 'Custom agents')}
+                  </div>
+                  {filteredCustomAgents.map((agent) =>
+                    renderItem({
+                      key: agent.id,
+                      itemValue: agent.id,
+                      isChecked: selectedCustomAgentId === agent.id,
+                      isDefault: false,
+                      onSelect: () => handleCustomAgentSelect(agent),
+                      icon: <CustomAgentIcon agent={agent} />,
+                      label: agent.label
+                    })
+                  )}
+                </>
+              ) : null}
             </CommandList>
             {onOpenManageAgents ? (
               <div className="border-t border-border">

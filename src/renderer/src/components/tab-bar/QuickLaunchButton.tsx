@@ -4,17 +4,19 @@ import { toast } from 'sonner'
 import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
 import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { useAppStore } from '@/store'
+import { useShallow } from 'zustand/react/shallow'
 import { useAgentDetectionTargetForWorktree } from '@/hooks/useAgentDetectionTarget'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
-import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
-import type { TuiAgent } from '../../../../shared/types'
+import { launchAgentInNewTab, launchCustomAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
+import type { TuiAgent, CustomAgent } from '../../../../shared/types'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import {
   DEFAULT_DISABLED_TUI_AGENTS,
   filterEnabledTuiAgents
 } from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
+import { CustomAgentIcon } from '../agent/CustomAgentIcon'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -113,6 +115,7 @@ function QuickLaunchAgentMenuItemsInner({
   const disabledAgents = useAppStore(
     (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
   )
+  const customAgents = useAppStore(useShallow((s) => s.settings?.customAgents ?? []))
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const newAgentShortcut = useOptionalShortcutLabel('tab.newAgent')
@@ -176,6 +179,32 @@ function QuickLaunchAgentMenuItemsInner({
     [worktreeId, groupId, onFocusTerminal, prompt, promptDelivery, launchSource, onPromptDelivered]
   )
 
+  const runCustomLaunch = useCallback(
+    (agent: CustomAgent) => {
+      const result = launchCustomAgentInNewTab({
+        agent,
+        worktreeId,
+        groupId,
+        ...(prompt !== undefined ? { prompt } : {}),
+        ...(promptDelivery !== undefined ? { promptDelivery } : {}),
+        ...(launchSource !== undefined ? { launchSource } : {}),
+        ...(onPromptDelivered !== undefined ? { onPromptDelivered } : {})
+      })
+      if (!result) {
+        toast.error(
+          translate(
+            'auto.components.tab.bar.QuickLaunchButton.465e432ef1',
+            'Could not build launch command for {{value0}}.',
+            { value0: agent.label }
+          )
+        )
+        return
+      }
+      onFocusTerminal(result.tabId)
+    },
+    [worktreeId, groupId, onFocusTerminal, prompt, promptDelivery, launchSource, onPromptDelivered]
+  )
+
   const enabledDetectedIds = detectedIds ? filterEnabledTuiAgents(detectedIds, disabledAgents) : []
   const agents = detectedIds ? orderAgents(defaultAgent, enabledDetectedIds) : []
 
@@ -218,6 +247,31 @@ function QuickLaunchAgentMenuItemsInner({
           </DropdownMenuItem>
         )
       })}
+      {customAgents.length > 0 ? (
+        <>
+          <DropdownMenuItem
+            disabled
+            className="gap-2 px-2 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60"
+          >
+            {translate('auto.components.tab.bar.QuickLaunchButton.customAgents', 'Custom agents')}
+          </DropdownMenuItem>
+          {customAgents.map((agent) => (
+            <DropdownMenuItem
+              key={agent.id}
+              onSelect={() => runCustomLaunch(agent)}
+              className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+              title={translate(
+                'auto.components.tab.bar.QuickLaunchButton.ec2adf093e',
+                'Launch {{value0}} in a new terminal',
+                { value0: agent.label }
+              )}
+            >
+              <CustomAgentIcon agent={agent} size={14} />
+              <span className="flex-1">{agent.label}</span>
+            </DropdownMenuItem>
+          ))}
+        </>
+      ) : null}
       <DropdownMenuItem
         onSelect={openAgentSettings}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium text-muted-foreground"

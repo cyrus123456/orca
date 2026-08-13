@@ -21,6 +21,7 @@ const {
   registerDiagnosticsHandlersMock,
   registerTerminalRenderDesyncEvidenceHandlerMock,
   registerShellHandlersMock,
+  registerIconImagePickerHandlersMock,
   registerPetHandlersMock,
   registerSessionHandlersMock,
   registerUIHandlersMock,
@@ -86,6 +87,7 @@ const {
   registerDiagnosticsHandlersMock: vi.fn(),
   registerTerminalRenderDesyncEvidenceHandlerMock: vi.fn(),
   registerShellHandlersMock: vi.fn(),
+  registerIconImagePickerHandlersMock: vi.fn(),
   registerPetHandlersMock: vi.fn(),
   registerSessionHandlersMock: vi.fn(),
   registerUIHandlersMock: vi.fn(),
@@ -254,6 +256,10 @@ vi.mock('./shell', () => ({
   registerShellHandlers: registerShellHandlersMock
 }))
 
+vi.mock('./icon-image-pickers', () => ({
+  registerIconImagePickerHandlers: registerIconImagePickerHandlersMock
+}))
+
 vi.mock('./pet', () => ({
   registerPetHandlers: registerPetHandlersMock
 }))
@@ -404,6 +410,7 @@ describe('registerCoreHandlers', () => {
     registerDiagnosticsHandlersMock.mockReset()
     registerTerminalRenderDesyncEvidenceHandlerMock.mockReset()
     registerShellHandlersMock.mockReset()
+    registerIconImagePickerHandlersMock.mockReset()
     registerPetHandlersMock.mockReset()
     registerSessionHandlersMock.mockReset()
     registerUIHandlersMock.mockReset()
@@ -553,6 +560,7 @@ describe('registerCoreHandlers', () => {
     expect(registerCliHandlersMock).toHaveBeenCalled()
     expect(registerPreflightHandlersMock).toHaveBeenCalled()
     expect(registerShellHandlersMock).toHaveBeenCalledWith(store)
+    expect(registerIconImagePickerHandlersMock).toHaveBeenCalled()
     expect(registerClipboardHandlersMock).toHaveBeenCalledWith(store)
     expect(registerUpdaterHandlersMock).toHaveBeenCalled()
     expect(setTrustedBrowserRendererWebContentsIdMock).toHaveBeenCalledWith(null)
