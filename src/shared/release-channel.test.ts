@@ -66,7 +66,7 @@ describe('release channel', () => {
       'https://github.com/cyrus123456/orca/releases/tag/v1.4.160-fork'
     )
     expect(getReleaseNotesUrlForVersion('v1.4.160-rc.3')).toBe(
-      'https://github.com/cyrus123456/orca/releases/tag/v1.4.160-rc.3'
+      'https://github.com/cyrus123456/orca/releases/tag/v1.4.160-rc.3-fork'
     )
     expect(getReleaseNotesUrlForVersion('1.4.160-adhoc.20260728140533')).toBe(
       'https://github.com/stablyai/orca-adhoc/releases/tag/v1.4.160-adhoc.20260728140533'
