@@ -169,9 +169,10 @@ export function getReleaseNotesUrlForVersion(version: string | null): string {
   if (!version) {
     return `https://github.com/${repo}/releases`
   }
-  // Why: fork stable release tags are v<version>-fork (e.g. v1.4.160-fork); the
-  // URL must include the -fork suffix to point at the actual published tag.
-  const tagSuffix = channel === 'stable' ? '-fork' : ''
+  // Why: every fork release tag is v<version>-fork (stable AND rc, e.g.
+  // v1.4.160-fork or v1.4.183-rc.0-fork); the URL must include the -fork suffix
+  // to point at the actual published tag. Dev channels publish to their own repos.
+  const tagSuffix = repo === MAIN_RELEASE_REPO ? '-fork' : ''
   return `https://github.com/${repo}/releases/tag/v${normalizeTagToVersion(version)}${tagSuffix}`
 }
 
