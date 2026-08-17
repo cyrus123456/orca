@@ -7,7 +7,7 @@ import type {
   UpdateCheckOptions,
   UpdateSource,
   UpdateStatus
-} from '../shared/types'
+} from '../shared/update-status-types'
 import type {
   RemoteServerUpdateInstallResult,
   RemoteServerUpdaterSnapshot,
@@ -2198,9 +2198,11 @@ export function setupAutoUpdater(
 
   // Fork: builds are unsigned, so skip Authenticode verification; the upstream
   // "never re-add" rule applies to official signed releases, not this fork.
-  ;(autoUpdater as ElectronAutoUpdater & {
-    verifyUpdateCodeSignature: () => Promise<void>
-  }).verifyUpdateCodeSignature = async () => {}
+  ;(
+    autoUpdater as ElectronAutoUpdater & {
+      verifyUpdateCodeSignature: () => Promise<void>
+    }
+  ).verifyUpdateCodeSignature = async () => {}
 
   // Why: generic provider avoids the native GitHub provider's RC-channel filtering; per-check repinning to a concrete /releases/download/<tag>/ URL avoids /latest redirect drift between check and download.
   if (activeUpdateSource === 'release') {

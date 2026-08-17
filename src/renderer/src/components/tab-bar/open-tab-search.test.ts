@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type {
-  BrowserPage,
-  BrowserWorkspace,
-  Tab,
-  TabContentType,
-  Worktree
-} from '../../../../shared/types'
+import type { BrowserPage, BrowserWorkspace } from '../../../../shared/browser-workspace-types'
+import type { Tab, TabContentType } from '../../../../shared/tab-types'
+import type { Worktree } from '../../../../shared/worktree/types'
 import type { SearchableBrowserPage } from '@/lib/browser-palette-search'
 import type { SearchableSimulatorTab } from '@/lib/simulator-palette-search'
 import type { SearchableWorkspaceTab } from '@/lib/workspace-tab-palette-search'
@@ -58,7 +54,7 @@ function makeWorkspaceTab({
   id,
   title,
   contentType = 'terminal',
-  secondaryText = 'Terminal tab',
+  secondaryText = '',
   secondarySearchTexts,
   agentSnippets = [],
   tabSortIndex = 0,
@@ -85,7 +81,7 @@ function makeWorkspaceTab({
     title,
     secondaryText,
     titleSearchText: title,
-    secondarySearchTexts: secondarySearchTexts ?? [secondaryText],
+    secondarySearchTexts: secondarySearchTexts ?? (secondaryText ? [secondaryText] : []),
     agentMetadata: agentSnippets.length
       ? [{ paneKey: `${id}-pane`, textParts: [], snippetCandidates: agentSnippets }]
       : [],

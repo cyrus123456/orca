@@ -50,10 +50,33 @@ jobs:
         run: |
           set -euo pipefail
           BEFORE=$(git rev-parse HEAD)
-          if ! git merge --no-edit upstream/main; then
-            echo "::error::Merge from upstream/main failed (conflicts). Aborting to keep the tree clean. Resolve conflicts in a local clone, then re-run."
-            git merge --abort
-            exit 1
+          # -X ours auto-resolves content conflicts in favor of the fork's side,
+          # so fork features survive while upstream's non-conflicting changes
+          # still merge in. Only modify/delete conflicts (files upstream deleted
+          # that the fork still carries) need the explicit handling below.
+          if ! git merge --no-edit -X ours upstream/main; then
+            if ! git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+              echo "::error::Merge failed for an unexpected reason; aborting."
+              exit 1
+            fi
+            echo "::warning::Merge left modify/delete conflicts; resolving them."
+            for FILE in $(git diff --name-only --diff-filter=U); do
+              # src/main/updater.test.ts: upstream replaced this monolithic test
+              # with focused updater-*.test.ts files; the fork's copy only swaps
+              # feed URLs against the old updater API — accept the deletion.
+              # Every other file: keep the fork's version (-X ours policy).
+              if [ "$FILE" = "src/main/updater.test.ts" ]; then
+                git rm -f "$FILE"
+              else
+                git add "$FILE"
+              fi
+            done
+            if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+              echo "::error::Unexpected unmerged paths remain."
+              git merge --abort
+              exit 1
+            fi
+            git commit --no-edit
           fi
           AFTER=$(git rev-parse HEAD)
           if [ "$BEFORE" = "$AFTER" ]; then

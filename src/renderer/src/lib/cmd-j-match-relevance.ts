@@ -3,7 +3,7 @@ import {
   resolveWorktreeDisplayName
 } from './worktree-default-display-name'
 import type { MatchRange, PaletteSearchResult } from './worktree-palette-search'
-import type { Worktree } from '../../../shared/types'
+import type { Worktree } from '../../../shared/worktree/types'
 
 // Why: worktrees and open tabs are searched by separate scorers whose scales encode list position,
 // so neither can say which section holds the better hit. Relevance is the one shared scale: which
@@ -81,12 +81,23 @@ export type OpenTabRelevanceInput = {
   repoRange: MatchRange | null
   workspaceLabel?: string | null
   workspaceRange?: MatchRange | null
+  /**
+   * Search-only type label match (e.g. "terminal tab" / "mobile emulator").
+   * Not rendered on the row — still needs a relevance field so section leadership
+   * and open-tab sort don't treat the hit as unmatched.
+   */
+  typeAliasMatch?: { text: string; range: MatchRange } | null
 }
 
 export function getOpenTabMatchRelevance(result: OpenTabRelevanceInput): number {
   return scorePaletteRelevance([
     { text: result.title, range: result.titleRange, tier: 0 },
     { text: result.secondaryText, range: result.secondaryRange, tier: 1 },
+    {
+      text: result.typeAliasMatch?.text ?? '',
+      range: result.typeAliasMatch?.range ?? null,
+      tier: 1
+    },
     {
       text: result.workspaceLabel ?? '',
       range: result.workspaceRange ?? null,

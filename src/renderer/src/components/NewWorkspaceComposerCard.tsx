@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SwitchIndicator } from '@/components/ui/switch'
 import { SettingsSwitch } from '@/components/settings/SettingsFormControls'
 import type RepoCombobox from '@/components/repo/RepoCombobox'
 import AgentCombobox from '@/components/agent/AgentCombobox'
@@ -23,6 +24,7 @@ import {
   filterEnabledTuiAgents
 } from '../../../shared/tui-agent-selection'
 import { useAppStore } from '@/store'
+import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
 import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
 import {
@@ -32,6 +34,7 @@ import {
   shouldHandleTextControlPaste
 } from '@/lib/text-control-paste'
 import { getScreenSubmitModifierLabel } from '@/lib/screen-submit-shortcut'
+import { resolveProjectCloneUrlPrefill } from '@/lib/project-clone-url-prefill'
 import { useContextualTour } from '@/components/contextual-tours/use-contextual-tour'
 import type {
   GitHubWorkItem,
@@ -51,6 +54,7 @@ import SmartWorkspaceNameField, {
 import type { SmartNameMode } from '@/components/new-workspace/smart-workspace-source-results'
 import ProjectCombobox from '@/components/new-workspace/ProjectCombobox'
 import RunTargetCombobox from '@/components/new-workspace/RunTargetCombobox'
+import { SetProjectLocationDialog } from '@/components/new-workspace/SetProjectLocationDialog'
 import {
   AddRemoteHostDialog,
   type AddRemoteHostMode
@@ -84,7 +88,7 @@ type NewWorkspaceComposerCardProps = {
   nameInputRef?: React.RefObject<HTMLInputElement | null>
   quickAgent: TuiAgent | null
   onQuickAgentChange: (agent: TuiAgent | null) => void
-  eligibleRepos: RepoOption[]
+  eligibleRepos: readonly RepoOption[]
   repoId: string
   projectOptions?: NewWorkspaceProjectOption[]
   selectedProjectId?: string | null
@@ -98,7 +102,7 @@ type NewWorkspaceComposerCardProps = {
   selectedEphemeralVmRecipeId?: string | null
   onEphemeralVmRecipeChange?: (recipeId: string | null) => void
   ephemeralVmRecipeError?: string | null
-  repoBackedSearchRepos?: RepoOption[]
+  repoBackedSearchRepos?: readonly RepoOption[]
   repoBackedSourcesDisabled?: boolean
   allowSmartNameAddProject?: boolean
   smartNameRepoSwitchTarget?: 'project' | 'task-source'
@@ -165,6 +169,8 @@ type NewWorkspaceComposerCardProps = {
   sparseControlsEnabled?: boolean
   /** When set, "Add project" opens a host-provided flow instead of swapping the store's active modal. */
   onAddProjectOverride?: () => void
+  /** Fires as the nested Set-project-location dialog opens and closes, so the host can stand down its Escape/submit handling. */
+  onNestedDialogOpenChange?: (open: boolean) => void
 }
 
 const SSH_STATUS_LABELS: Partial<Record<SshConnectionStatus, string>> = {
@@ -374,7 +380,8 @@ export default function NewWorkspaceComposerCard({
   sparseSelectedPresetId,
   onSparseSelectPreset,
   sparseControlsEnabled = true,
-  onAddProjectOverride
+  onAddProjectOverride,
+  onNestedDialogOpenChange
 }: NewWorkspaceComposerCardProps): React.JSX.Element {
   // Why: subscribe (form uses translate() directly) so an open create dialog repaints when the UI language changes.
   useTranslation()
@@ -385,7 +392,7 @@ export default function NewWorkspaceComposerCard({
   const disabledTuiAgents = useAppStore(
     (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
   )
-  const customAgents = useAppStore((s) => s.settings?.customAgents ?? [])
+  const customAgents = useAppStore(useShallow((s) => s.settings?.customAgents ?? []))
   const defaultCustomAgentId = useAppStore((s) => s.settings?.defaultCustomAgentId ?? null)
   const updateSettings = useAppStore((s) => s.updateSettings)
   const [selectedCustomAgentId, setSelectedCustomAgentId] = React.useState<string | null>(
@@ -540,6 +547,32 @@ export default function NewWorkspaceComposerCard({
   const handleAddRemoteServer = React.useCallback((): void => {
     setAddRemoteHostMode('server')
   }, [])
+  const [setLocationOption, setSetLocationOption] =
+    React.useState<NeedsSetupProjectHostOption | null>(null)
+  const handleSetLocation = React.useCallback(
+    (option: NeedsSetupProjectHostOption): void => {
+      setSetLocationOption(option)
+      onNestedDialogOpenChange?.(true)
+    },
+    [onNestedDialogOpenChange]
+  )
+  const handleSetLocationClose = React.useCallback((): void => {
+    setSetLocationOption(null)
+    onNestedDialogOpenChange?.(false)
+  }, [onNestedDialogOpenChange])
+  const handleSetLocationReady = React.useCallback(
+    (setupId: string): void => {
+      handleSetLocationClose()
+      onProjectHostSetupChange?.(setupId)
+    },
+    [handleSetLocationClose, onProjectHostSetupChange]
+  )
+  const projects = useAppStore((state) => state.projects)
+  const repos = useAppStore((state) => state.repos)
+  const defaultCloneUrl = React.useMemo(
+    () => resolveProjectCloneUrlPrefill(projects, repos, selectedProjectId),
+    [projects, repos, selectedProjectId]
+  )
   const handleConnectRunTargetHost = React.useCallback(
     async (option: NeedsSetupProjectHostOption): Promise<void> => {
       const action = option.connectAction
@@ -745,6 +778,7 @@ export default function NewWorkspaceComposerCard({
                 onAddSshHost={handleAddSshHost}
                 onAddRemoteServer={handleAddRemoteServer}
                 onConnectHost={handleConnectRunTargetHost}
+                onSetLocation={handleSetLocation}
               />
               {ephemeralVmRecipeError ? (
                 <p className="whitespace-pre-line text-[11px] text-destructive">
@@ -959,7 +993,7 @@ export default function NewWorkspaceComposerCard({
             variant="ghost"
             size="sm"
             onClick={onToggleAdvanced}
-            className="-ml-2 text-xs"
+            className="-ml-2 text-xs focus-visible:ring-inset"
           >
             {translate('auto.components.NewWorkspaceComposerCard.f0470c7383', 'Advanced')}
             <ChevronDown
@@ -975,6 +1009,7 @@ export default function NewWorkspaceComposerCard({
             advancedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
           )}
           aria-hidden={!advancedOpen}
+          inert={!advancedOpen}
         >
           <div className="min-h-0">
             {/* Why: px-1 gives the Note textarea's 3px outset focus ring breathing room so the overflow-hidden drawer doesn't clip it. */}
@@ -1041,18 +1076,15 @@ export default function NewWorkspaceComposerCard({
                   value={note}
                   onChange={(event) => onNoteChange(event.target.value)}
                   onPaste={handleNotePaste}
-                  onInput={(event) => {
-                    // Why: reset then size to content so short notes stay compact and long ones grow without a scrollbar until max-h clamps.
-                    const ta = event.currentTarget
-                    ta.style.height = 'auto'
-                    ta.style.height = `${ta.scrollHeight}px`
-                  }}
                   placeholder={translate(
                     'auto.components.NewWorkspaceComposerCard.090cfedeb4',
                     'Write a note'
                   )}
                   rows={1}
-                  className="w-full min-w-0 resize-none overflow-hidden rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 max-h-40"
+                  // Why (#10575): field-sizing:content grows the note with its value, so a PR/MR
+                  // prefill written straight to state sizes like typed text — an onInput measure
+                  // pass never saw it. Past the max-h clamp the sleek scrollbar keeps it readable.
+                  className="w-full min-w-0 resize-none overflow-y-auto scrollbar-sleek rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 [field-sizing:content] max-h-40"
                 />
               </div>
 
@@ -1252,20 +1284,7 @@ export default function NewWorkspaceComposerCard({
             onClick={() => onCreateMultipleChange?.(!createMultiple)}
             className="group flex w-fit cursor-pointer items-center gap-2 rounded-md text-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <span
-              aria-hidden
-              className={cn(
-                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors',
-                createMultiple ? 'bg-foreground' : 'bg-muted-foreground/30'
-              )}
-            >
-              <span
-                className={cn(
-                  'pointer-events-none block size-3.5 rounded-full bg-background shadow-sm transition-transform',
-                  createMultiple ? 'translate-x-4' : 'translate-x-0.5'
-                )}
-              />
-            </span>
+            <SwitchIndicator checked={createMultiple} />
             <span className="text-muted-foreground transition-colors group-hover:text-foreground">
               {translate('auto.components.NewWorkspaceComposerCard.createMultiple', 'Create more')}
             </span>
@@ -1289,6 +1308,14 @@ export default function NewWorkspaceComposerCard({
           the in-progress workspace form is preserved; on success the new host flows back into
           the run-target picker via the store. */}
       <AddRemoteHostDialog mode={addRemoteHostMode} onOpenChange={setAddRemoteHostMode} />
+      <SetProjectLocationDialog
+        option={setLocationOption}
+        projectName={selectedProjectName}
+        projectKind={selectedRepoIsGit ? 'git' : 'folder'}
+        defaultCloneUrl={defaultCloneUrl}
+        onClose={handleSetLocationClose}
+        onReady={handleSetLocationReady}
+      />
     </div>
   )
 }

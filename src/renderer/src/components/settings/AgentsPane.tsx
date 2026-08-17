@@ -62,6 +62,7 @@ import { toast } from 'sonner'
 import { CustomAgentIcon } from '../agent/CustomAgentIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { parseAgentDefaultEnvDraft, stringifyAgentDefaultEnvDraft } from './agent-default-env-draft'
+import { isPairedWebClientWindow } from '@/lib/desktop-window-chrome'
 
 export { getAgentsPaneSearchEntries } from './agents-search'
 
@@ -804,7 +805,7 @@ export function AgentsPane({
   const saveCustomAgent = (agent: CustomAgent): void => {
     const existing = customAgents.findIndex((a) => a.id === agent.id)
     const next =
-      existing >= 0
+      existing !== -1
         ? customAgents.map((a) => (a.id === agent.id ? agent : a))
         : [...customAgents, agent]
     updateSettings({ customAgents: next })
@@ -929,7 +930,9 @@ export function AgentsPane({
 
       <AgentGeneratedTabTitlesSetting settings={settings} updateSettings={updateSettings} />
 
-      <AgentAwakeSetting settings={settings} updateSettings={updateSettings} />
+      {!isPairedWebClientWindow() ? (
+        <AgentAwakeSetting settings={settings} updateSettings={updateSettings} />
+      ) : null}
 
       <AgentCacheTimerSection settings={settings} updateSettings={updateSettings} />
 
