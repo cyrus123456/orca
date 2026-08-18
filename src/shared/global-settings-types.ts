@@ -25,6 +25,7 @@ import type { CtrlTabOrderMode } from './tab-types'
 import type { TerminalColorOverrides } from './terminal-color-overrides'
 import type { TerminalQuickCommand } from './terminal-quick-command-types'
 import type { TuiAgent } from './tui-agent'
+import type { CustomAgent } from './types'
 import type {
   AgentDashboardMode,
   BranchPrefixStrategy,
@@ -296,6 +297,10 @@ export type GlobalSettings = {
    *  - 'blank': blank terminal (no agent launched)
    *  - TuiAgent: a specific agent id */
   defaultTuiAgent: TuiAgent | 'blank' | null
+  /** ID of a user-defined custom agent to use as default; takes priority over defaultTuiAgent when set. */
+  defaultCustomAgentId?: string | null
+  /** User-defined custom agents that appear alongside built-in agents in the picker. */
+  customAgents?: CustomAgent[]
   /** Agents hidden from picker/auto-launch; detection stays a raw PATH snapshot. */
   disabledTuiAgents: TuiAgent[]
   /** Master switch for the experimental plugin system. Off by default: no

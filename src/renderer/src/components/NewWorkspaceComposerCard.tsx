@@ -34,6 +34,7 @@ import {
   shouldHandleTextControlPaste
 } from '@/lib/text-control-paste'
 import { getScreenSubmitModifierLabel } from '@/lib/screen-submit-shortcut'
+import { resolveProjectCloneUrlPrefill } from '@/lib/project-clone-url-prefill'
 import { useContextualTour } from '@/components/contextual-tours/use-contextual-tour'
 import type {
   GitHubWorkItem,

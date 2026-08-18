@@ -106,114 +106,16 @@ export type PreloadApi = {
   agentHooks: AgentHooksApi
   agentTrust: AgentTrustApi
   preflight: PreflightApi
-  notifications: {
-    dispatch: (args: NotificationDispatchRequest) => Promise<NotificationDispatchResult>
-    dismiss: (ids: string[]) => Promise<NotificationDismissResult>
-    openSystemSettings: () => Promise<void>
-    getPermissionStatus: () => Promise<NotificationPermissionStatusResult>
-    probeDelivery: (args?: { force?: boolean }) => Promise<NotificationDeliveryProbeResult>
-    playSound: (options?: { force?: boolean; volume?: number }) => Promise<NotificationSoundResult>
-  }
-  onboarding: {
-    get: () => Promise<OnboardingState>
-    // Why: main merges the checklist field-by-field, so a partial checklist is fine.
-    update: (
-      updates: Partial<Omit<OnboardingState, 'checklist'>> & {
-        checklist?: Partial<OnboardingState['checklist']>
-      }
-    ) => Promise<OnboardingState>
-  }
-  dashboard: {
-    openPopout: (view?: 'board' | 'map') => Promise<void>
-    publishSnapshot: (snapshot: DashboardSnapshot) => Promise<void>
-    getPopoutOpen: () => Promise<boolean>
-    onPopoutOpenChanged: (callback: (open: boolean) => void) => () => void
-    onSnapshotRequested: (callback: () => void) => () => void
-    onRevealAgent: (callback: (args: DashboardRevealAgentArgs) => void) => () => void
-    onAckAgent: (callback: (paneKey: string) => void) => () => void
-    onSpawnAgent: (callback: (args: DashboardSpawnAgentArgs) => void) => () => void
-    onSleepWorkspace: (callback: (args: DashboardSleepWorkspaceArgs) => void) => () => void
-    requestSnapshot: () => Promise<void>
-    onSnapshot: (callback: (snapshot: DashboardSnapshot) => void) => () => void
-    onViewRequested: (callback: (view: 'board' | 'map') => void) => () => void
-    revealAgent: (args: DashboardRevealAgentArgs) => Promise<void>
-    ackAgent: (paneKey: string) => Promise<void>
-    spawnAgent: (args: DashboardSpawnAgentArgs) => Promise<void>
-    sleepWorkspace: (args: DashboardSleepWorkspaceArgs) => Promise<void>
-  }
-  terminalPreview: {
-    connect: (
-      ptyId: string,
-      opts?: { scrollbackRows?: number }
-    ) => Promise<TerminalPreviewConnectResult>
-    input: (ptyId: string, data: string) => Promise<boolean>
-    /** Claim the PTY grid for the preview dialog; resolves to the size actually in effect. */
-    fit: (
-      ptyId: string,
-      cols: number,
-      rows: number
-    ) => Promise<{ cols: number; rows: number } | null>
-    ack: (ptyId: string, bytes: number) => Promise<void>
-    unsubscribe: (ptyId: string) => Promise<void>
-    onData: (callback: (payload: TerminalPreviewDataPayload) => void) => () => void
-  }
-  macosTccPrompts: {
-    /** Fires once macOS has raised its Nth consent dialog naming Orca (#9756). */
-    onThreshold: (callback: (payload: { promptCount: number }) => void) => () => void
-    consumePending: () => Promise<{ claimId: number; promptCount: number } | null>
-    acknowledgePending: (claimId: number) => Promise<void>
-    releasePending: (claimId: number) => Promise<void>
-    dismiss: () => Promise<void>
-  }
-  developerPermissions: {
-    getStatus: () => Promise<DeveloperPermissionState[]>
-    request: (args: { id: DeveloperPermissionId }) => Promise<DeveloperPermissionRequestResult>
-    openSettings: (args: { id: DeveloperPermissionId }) => Promise<void>
-    testLocalNetworkConnection: (args: {
-      host: string
-      port: number
-    }) => Promise<LocalNetworkConnectionTestResult>
-  }
-  computerUsePermissions: {
-    getStatus: () => Promise<ComputerUsePermissionStatusResult>
-    openSetup: (args?: {
-      id?: ComputerUsePermissionId
-    }) => Promise<ComputerUsePermissionSetupResult>
-    reset: () => Promise<ComputerUsePermissionResetResult>
-  }
-  shell: {
-    openPath: (path: string) => Promise<void>
-    openInFileManager: (path: string) => Promise<ShellOpenLocalPathResult>
-    openInExternalEditor: (
-      request: ShellOpenExternalEditorRequest
-    ) => Promise<ShellOpenExternalEditorResult>
-    openUrl: (url: string) => Promise<void>
-    openFilePath: (path: string) => Promise<boolean>
-    openFileUri: (uri: string) => Promise<void>
-    pathExists: (path: string) => Promise<boolean>
-    pickAttachment: () => Promise<string | null>
-    pickImage: () => Promise<string | null>
-    pickRepoIconImage: () => Promise<{ dataUrl: string; fileName: string } | null>
-    pickAgentIconImage: () => Promise<{ dataUrl: string; fileName: string } | null>
-    pickAudio: () => Promise<string | null>
-    pickDirectory: (args: { defaultPath?: string }) => Promise<string | null>
-    copyFile: (args: { srcPath: string; destPath: string }) => Promise<void>
-  }
-  skills: {
-    discover: (target?: SkillDiscoveryTarget) => Promise<SkillDiscoveryResult>
-    freshnessInventory: () => Promise<SkillFreshnessInventory>
-    startUpdateRun: (names: string[]) => Promise<SkillUpdateStartResult>
-    cancelUpdateRun: () => Promise<void>
-    acknowledgeUpdateRun: () => Promise<void>
-    getUpdateRun: () => Promise<SkillUpdateRun>
-    onUpdateRun: (callback: (run: SkillUpdateRun) => void) => () => void
-  }
-  pet: {
-    import: () => Promise<CustomPet | null>
-    importPetBundle: () => Promise<CustomPet | null>
-    read: (id: string, fileName: string, kind?: 'image' | 'bundle') => Promise<ArrayBuffer | null>
-    delete: (id: string, fileName: string, kind?: 'image' | 'bundle') => Promise<void>
-  }
+  notifications: NotificationsApi
+  onboarding: OnboardingApi
+  dashboard: DashboardApi
+  terminalPreview: TerminalPreviewApi
+  macosTccPrompts: MacosTccPromptsApi
+  developerPermissions: DeveloperPermissionsApi
+  computerUsePermissions: ComputerUsePermissionsApi
+  shell: ShellApi
+  skills: SkillsApi
+  pet: PetApi
   browser: BrowserApi
   emulator: EmulatorApi
   hooks: HooksApi

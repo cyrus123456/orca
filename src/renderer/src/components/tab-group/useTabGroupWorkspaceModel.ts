@@ -48,45 +48,10 @@ export function useTabGroupWorkspaceModel({
   const { group, groupTabs, activeTab, terminalTabs, editorItems, browserItems, tabBarOrder } =
     useTabGroupItemProjections({ groupId, worktreeId, worktreeState })
 
-  const terminalTabs = useMemo<TerminalTabItem[]>(
-    () =>
-      groupTabs
-        .filter((item) => item.contentType === 'terminal')
-        .map((item) => {
-          const terminalTab = terminalTabById.get(item.entityId)
-          return {
-            id: item.entityId,
-            unifiedTabId: item.id,
-            ptyId: terminalTab?.ptyId ?? null,
-            worktreeId,
-            title: resolveUnifiedTabLabel(
-              {
-                ...item,
-                quickCommandLabel: item.quickCommandLabel ?? terminalTab?.quickCommandLabel,
-                generatedLabel: item.generatedLabel ?? terminalTab?.generatedTitle
-              },
-              worktreeState.generatedTabTitlesEnabled,
-              item.label
-            ),
-            defaultTitle: terminalTab?.defaultTitle,
-            quickCommandLabel: terminalTab?.quickCommandLabel ?? item.quickCommandLabel ?? null,
-            generatedTitle: terminalTab?.generatedTitle ?? item.generatedLabel ?? null,
-            customTitle: item.customLabel ?? terminalTab?.customTitle ?? null,
-            color: item.color ?? terminalTab?.color ?? null,
-            sortOrder: item.sortOrder,
-            createdAt: item.createdAt,
-            generation: terminalTab?.generation,
-            shellOverride: terminalTab?.shellOverride,
-            startupCwd: terminalTab?.startupCwd,
-            // Why: rebuilt from the unified-tab model, so copy store-only launchAgent or the provider icon is missing until the first hook.
-            launchAgent: terminalTab?.launchAgent,
-            // Why: same reason as launchAgent — without this the tab bar falls back to the default shell icon for custom-agent tabs.
-            customLaunchAgentId: terminalTab?.customLaunchAgentId,
-            pendingActivationSpawn: terminalTab?.pendingActivationSpawn
-          }
-        }),
-    [groupTabs, terminalTabById, worktreeId, worktreeState.generatedTabTitlesEnabled]
-  )
+  const { closeItem, closeMany, leaveWorktreeIfEmpty } = useTabGroupTabCloseCommands({
+    worktreeId,
+    groupTabs
+  })
 
   const { closeGroup, closeAllEditorTabsInGroup, closeOthers, closeToRight, closeToLeft } =
     useTabGroupCloseScopeCommands({
