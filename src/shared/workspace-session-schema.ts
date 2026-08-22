@@ -102,11 +102,7 @@ export const workspaceSessionStateSchema: z.ZodType<WorkspaceSessionState> = z.o
   activeWorkspaceKey: salvagedOptional('activeWorkspaceKey', workspaceKeySchema.nullable()),
   activeWorkspaceExecutionHostId: salvagedOptional(
     'activeWorkspaceExecutionHostId',
-    z
-      .custom<ExecutionHostId>(
-        (value) => typeof value === 'string' && Boolean(parseExecutionHostId(value))
-      )
-      .nullable()
+    executionHostIdSchema.nullable()
   ),
   activeWorktreeId: salvagedField('activeWorktreeId', z.string().nullable(), () => null),
   activeTabId: salvagedField('activeTabId', z.string().nullable(), () => null),

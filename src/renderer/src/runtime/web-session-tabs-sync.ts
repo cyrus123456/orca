@@ -4,6 +4,7 @@ import type { AppState } from '../store'
 import { useAppStore } from '../store'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../../shared/constants'
+import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
 import {
   AGENT_STATUS_STALE_AFTER_MS,
   pickParsedAgentStatusPayload,
@@ -1496,6 +1497,7 @@ function buildMirroredAgentStatusPatch(
 function buildTerminalUnifiedTab(
   tab: TerminalTab,
   groupId: string,
+  environmentId: string,
   // Why: viewMode is host-tracked but the client's optimistic toggle must win during the echo window; callers pass the reconciled value.
   viewMode?: Tab['viewMode']
 ): Tab {
@@ -1504,6 +1506,7 @@ function buildTerminalUnifiedTab(
     entityId: tab.id,
     groupId,
     worktreeId: tab.worktreeId,
+    executionHostId: toRuntimeExecutionHostId(environmentId),
     contentType: 'terminal',
     label: tab.title,
     ...(tab.quickCommandLabel?.trim() ? { quickCommandLabel: tab.quickCommandLabel.trim() } : {}),
@@ -1524,13 +1527,15 @@ function buildBrowserUnifiedTab(
   tab: BrowserWorkspace,
   hostTab: RuntimeMobileSessionBrowserTab,
   existingUnifiedTab: Tab | null,
-  groupId: string
+  groupId: string,
+  environmentId: string
 ): Tab {
   return {
     id: existingUnifiedTab?.id ?? hostTab.id,
     entityId: tab.id,
     groupId,
     worktreeId: tab.worktreeId,
+    executionHostId: toRuntimeExecutionHostId(environmentId),
     contentType: 'browser',
     label: tab.title,
     customLabel: null,
@@ -1553,13 +1558,15 @@ function buildEditorUnifiedTab(
   label: string,
   groupId: string,
   sortOrder: number,
-  createdAt: number
+  createdAt: number,
+  environmentId: string
 ): Tab {
   return {
     id: hostTabId,
     entityId: file.id,
     groupId,
     worktreeId: file.worktreeId,
+    executionHostId: toRuntimeExecutionHostId(environmentId),
     contentType: 'editor',
     label,
     customLabel: null,
@@ -1613,7 +1620,8 @@ function buildMirroredEditorTabs(
         tab.title.trim() || tab.relativePath || 'File',
         groupId,
         sortOffset + index,
-        existingUnifiedTab?.createdAt ?? now + sortOffset + index
+        existingUnifiedTab?.createdAt ?? now + sortOffset + index,
+        environmentId
       )
     }
   })
@@ -1734,7 +1742,13 @@ function buildMirroredBrowserTabs(
       page,
       certificateFailure: tab.certificateFailure ?? null,
       remotePageId: tab.browserPageId,
-      unifiedTab: buildBrowserUnifiedTab(workspace, tab, existing?.unifiedTab ?? null, groupId),
+      unifiedTab: buildBrowserUnifiedTab(
+        workspace,
+        tab,
+        existing?.unifiedTab ?? null,
+        groupId,
+        environmentId
+      ),
       hostTabId: tab.id,
       ...(clientGroupId ? { clientGroupId } : {})
     }
@@ -2443,6 +2457,7 @@ function tabEqual(a: Tab, b: Tab): boolean {
     a.entityId === b.entityId &&
     a.groupId === b.groupId &&
     a.worktreeId === b.worktreeId &&
+    a.executionHostId === b.executionHostId &&
     a.contentType === b.contentType &&
     a.label === b.label &&
     // Why: the generated label is the visible tab title; ignoring it let the
@@ -2778,6 +2793,7 @@ function applyWebSessionTabsSnapshotWithContext(
     buildTerminalUnifiedTab(
       entry.tab,
       hostGroupIdByTabId.get(entry.hostTabId) ?? targetGroupId,
+      environmentId,
       entry.tab.viewMode ?? existingViewModeByTabId.get(entry.tab.id)
     )
   )
