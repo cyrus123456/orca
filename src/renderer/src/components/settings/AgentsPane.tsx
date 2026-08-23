@@ -666,14 +666,21 @@ type DefaultAgentPillProps = {
   active: boolean
   onClick: () => void
   children: React.ReactNode
+  title?: string
 }
 
-function DefaultAgentPill({ active, onClick, children }: DefaultAgentPillProps): React.JSX.Element {
+function DefaultAgentPill({
+  active,
+  onClick,
+  children,
+  title
+}: DefaultAgentPillProps): React.JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      title={title}
       className={cn(
         'inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm outline-none transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50',
         active
@@ -843,6 +850,19 @@ export function AgentsPane({
         (!detectedIds?.has(defaultAgent) || !isTuiAgentEnabled(defaultAgent, disabledAgents))))
   const isBlankDefault = defaultCustomAgentId === null && defaultAgent === 'blank'
 
+  // Why show an undetected default: when detection comes back empty there were
+  // no agent pills at all, so the stored choice was invisible AND unrecoverable
+  // -- nothing to click to put it back. Keeping it listed means a failed or
+  // slow probe cannot quietly cost the user their setting.
+  const storedDefaultAgent =
+    defaultAgent !== null && defaultAgent !== 'blank'
+      ? getAgentCatalog().find((agent) => agent.id === defaultAgent)
+      : undefined
+  const defaultAgentPills =
+    storedDefaultAgent && !enabledDetectedAgents.some((agent) => agent.id === storedDefaultAgent.id)
+      ? [...enabledDetectedAgents, storedDefaultAgent]
+      : enabledDetectedAgents
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -879,6 +899,14 @@ export function AgentsPane({
                 key={agent.id}
                 active={isActive}
                 onClick={() => setDefault(agent.id)}
+                title={
+                  isUndetected
+                    ? translate(
+                        'auto.components.settings.AgentsPane.storedDefaultUndetected',
+                        'Saved as your default, but not detected right now'
+                      )
+                    : undefined
+                }
               >
                 <AgentIcon agent={agent.id} size={14} />
                 {agent.label}
