@@ -1,6 +1,7 @@
 import type { GlobalSettings } from './global-settings-types'
 import type { Repo } from './repo-types'
 import type { Worktree } from './worktree/types'
+import { z } from 'zod'
 
 export const LOCAL_EXECUTION_HOST_ID = 'local'
 export const ALL_EXECUTION_HOSTS_SCOPE = 'all'
@@ -14,6 +15,18 @@ export type ParsedExecutionHost =
   | { kind: 'local'; id: typeof LOCAL_EXECUTION_HOST_ID }
   | { kind: 'ssh'; id: `ssh:${string}`; targetId: string }
   | { kind: 'runtime'; id: `runtime:${string}`; environmentId: string }
+
+// Why: shared zod validator for persisted execution-host ids so the workspace
+// session schema and the renderer agree on shape; mirrors the main-process
+// session-list-result-validation schema, which cannot be imported here.
+export const executionHostIdSchema = z.string().transform((value, ctx) => {
+  const normalized = normalizeExecutionHostId(value)
+  if (normalized) {
+    return normalized
+  }
+  ctx.addIssue({ code: 'custom', message: 'Invalid execution host id' })
+  return z.NEVER
+})
 
 function getCurrentLocalPlatform(): NodeJS.Platform | null {
   const globalNavigator = (globalThis as { navigator?: { userAgent?: string; platform?: string } })

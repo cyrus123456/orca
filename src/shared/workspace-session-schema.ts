@@ -13,7 +13,7 @@
  */
 import { z } from 'zod'
 import type { TerminalPaneLayoutNode, WorkspaceKey, WorkspaceSessionState } from './types'
-import { parseExecutionHostId, type ExecutionHostId } from './execution-host'
+import { executionHostIdSchema } from './execution-host'
 import { isWorkspaceKey } from './workspace-scope'
 import {
   browserHistoryEntriesSchema,

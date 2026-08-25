@@ -882,6 +882,12 @@ export type Tab = {
    *  sync. Without this, rebuilds from the unified model drop the field and
    *  the tab bar falls back to the default shell icon. */
   customLaunchAgentId?: string
+  /** Why: the host the tab's agent session runs on, needed to route resume
+   *  after restore. Mirrors TerminalTab.executionHostId. */
+  executionHostId?: ExecutionHostId
+  /** Why: last-focus timestamp so restore can reselect the most-recently-used
+   *  tab. Mirrors TerminalTab.lastFocusedAt. */
+  lastFocusedAt?: number
 }
 
 export type TabGroup = {

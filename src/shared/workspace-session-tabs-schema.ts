@@ -3,6 +3,7 @@
  * that file inside its line budget; the schemas themselves are unchanged. */
 import { z } from 'zod'
 import type { TabGroupLayoutNode, TuiAgent } from './types'
+import { executionHostIdSchema } from './execution-host'
 import { isValidTerminalTabId } from './terminal-tab-id'
 import { isTuiAgent } from './tui-agent-config'
 
@@ -100,7 +101,15 @@ export const tabSchema = z.object({
   // Why: mirror of TerminalTab.customLaunchAgentId so the unified tab model
   // preserves the custom agent binding across session restore. `.catch(...)`
   // keeps a corrupted null/garbage id from failing the whole-session parse.
-  customLaunchAgentId: z.string().min(1).optional().catch(undefined)
+  customLaunchAgentId: z.string().min(1).optional().catch(undefined),
+  // Why: mirror of Tab.executionHostId so a restored tab keeps the host its
+  // agent ran on (needed for resume routing). `.catch(undefined)` tolerates a
+  // garbage value from a corrupted session.
+  executionHostId: executionHostIdSchema.optional(),
+  // Why: mirror of Tab.lastFocusedAt so restore keeps the most-recently-focused
+  // tab selection. `.catch(undefined)` drops an invalid timestamp without
+  // rejecting the whole-session parse (the tab itself must survive).
+  lastFocusedAt: z.number().finite().nonnegative().optional().catch(undefined)
 })
 
 export const tabGroupSchema = z.object({
