@@ -1,38 +1,10 @@
-/* eslint-disable max-lines -- Why: keep the full composer card markup together so the inline and modal variants share one UI surface. */
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import {
-  AlertTriangle,
-  Check,
-  ChevronDown,
-  CornerDownLeft,
-  FolderPlus,
-  LoaderCircle,
-  PlugZap,
-  Settings2
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { SwitchIndicator } from '@/components/ui/switch'
-import { SettingsSwitch } from '@/components/settings/SettingsFormControls'
-import type RepoCombobox from '@/components/repo/RepoCombobox'
-import AgentCombobox from '@/components/agent/AgentCombobox'
-import { getAgentCatalog } from '@/lib/agent-catalog'
-import {
-  DEFAULT_DISABLED_TUI_AGENTS,
-  filterEnabledTuiAgents
-} from '../../../shared/tui-agent-selection'
 import { useAppStore } from '@/store'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@/lib/utils'
-import { WORKSPACE_FILE_PATH_MIME } from '@/lib/workspace-file-drag'
-import {
-  TEXT_CONTROL_PASTE_DIRECT_MAX_BYTES,
-  measureTextControlPasteByteLength,
-  pasteTextIntoTextControl,
-  shouldHandleTextControlPaste
-} from '@/lib/text-control-paste'
+import { getAgentCatalog } from '@/lib/agent-catalog'
 import { getScreenSubmitModifierLabel } from '@/lib/screen-submit-shortcut'
 import { resolveProjectCloneUrlPrefill } from '@/lib/project-clone-url-prefill'
 import { useContextualTour } from '@/components/contextual-tours/use-contextual-tour'
@@ -59,20 +31,31 @@ import {
   AddRemoteHostDialog,
   type AddRemoteHostMode
 } from '@/components/sidebar/AddRemoteHostDialog'
-import type { SetupConfig } from '@/lib/new-workspace'
-import type { NewWorkspaceProjectOption } from '@/lib/new-workspace-project-options'
-import type {
-  NeedsSetupProjectHostOption,
-  ProjectHostSetupOption
-} from '@/lib/project-host-setup-options'
-import type { WorkspaceCreateErrorDisplay } from '@/lib/workspace-create-error-format'
-import type { SshConnectionStatus } from '../../../shared/ssh-types'
-import type { TaskSourceContext } from '../../../shared/task-source-context'
-import type { RuntimeStatus } from '../../../shared/runtime-types'
+import { SetProjectLocationDialog } from '@/components/new-workspace/SetProjectLocationDialog'
 import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
-import { translate } from '@/i18n/i18n'
 import { withUiConnectTimeout } from '@/ssh/ssh-connect-ui-timeout'
 import { isSshConnectInFlight, trackSshConnect } from '@/ssh/ssh-connect-in-flight'
+import { translate } from '@/i18n/i18n'
+import {
+  DEFAULT_DISABLED_TUI_AGENTS,
+  filterEnabledTuiAgents
+} from '../../../shared/tui-agent-selection'
+import type { RuntimeStatus } from '../../../shared/runtime-types'
+import type { TuiAgent } from '../../../shared/tui-agent'
+import { NewWorkspaceComposerAdvancedSection } from './new-workspace/NewWorkspaceComposerAdvancedSection'
+import { NewWorkspaceComposerAgentSection } from './new-workspace/NewWorkspaceComposerAgentSection'
+import { NewWorkspaceComposerFooter } from './new-workspace/NewWorkspaceComposerFooter'
+import { NewWorkspaceComposerNameSection } from './new-workspace/NewWorkspaceComposerNameSection'
+import { NewWorkspaceComposerProjectSection } from './new-workspace/NewWorkspaceComposerProjectSection'
+import {
+  EMPTY_EPHEMERAL_VM_RECIPES,
+  EMPTY_PROJECT_HOST_SETUP_OPTIONS,
+  EMPTY_PROJECT_OPTIONS,
+  type NeedsProjectHostOption,
+  type NewWorkspaceComposerCardProps
+} from './new-workspace/new-workspace-composer-card-props'
+import { getSshStatusLabel } from './new-workspace/new-workspace-composer-ssh-status'
+import { useComposerFileDragOver } from './new-workspace/use-composer-file-drag-over'
 
 type RepoOption = React.ComponentProps<typeof RepoCombobox>['repos'][number]
 type EphemeralVmRecipeOption = NonNullable<OrcaHooks['environmentRecipes']>[number]
@@ -385,12 +368,32 @@ export default function NewWorkspaceComposerCard({
 }: NewWorkspaceComposerCardProps): React.JSX.Element {
   // Why: subscribe (form uses translate() directly) so an open create dialog repaints when the UI language changes.
   useTranslation()
+  const {
+    contextualTourSource,
+    containerClassName,
+    composerRef,
+    onComposerNodeChange,
+    nameInputRef,
+    eligibleRepos,
+    repoId,
+    selectedRepoIsGit,
+    onProjectHostSetupChange,
+    selectedRepoSshStatus,
+    setupConfig,
+    setupControlsEnabled = true,
+    selectedProjectId = null,
+    onAddProjectOverride,
+    onNestedDialogOpenChange
+  } = props
+  const projectOptions = props.projectOptions ?? EMPTY_PROJECT_OPTIONS
+  const projectHostSetupOptions = props.projectHostSetupOptions ?? EMPTY_PROJECT_HOST_SETUP_OPTIONS
+  const ephemeralVmRecipes = props.ephemeralVmRecipes ?? EMPTY_EPHEMERAL_VM_RECIPES
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
-  const openModal = useAppStore((s) => s.openModal)
-  const activeModal = useAppStore((s) => s.activeModal)
-  const defaultTuiAgent = useAppStore((s) => s.settings?.defaultTuiAgent ?? null)
+  const openModal = useAppStore((state) => state.openModal)
+  const activeModal = useAppStore((state) => state.activeModal)
+  const defaultTuiAgent = useAppStore((state) => state.settings?.defaultTuiAgent ?? null)
   const disabledTuiAgents = useAppStore(
-    (s) => s.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
+    (state) => state.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
   )
   const customAgents = useAppStore(useShallow((s) => s.settings?.customAgents ?? []))
   const defaultCustomAgentId = useAppStore((s) => s.settings?.defaultCustomAgentId ?? null)
@@ -433,15 +436,28 @@ export default function NewWorkspaceComposerCard({
   )
   const nameInputFocusFrameRef = React.useRef<number | null>(null)
   const branchNameInputId = React.useId()
-  const submitShortcutModifierLabel = getScreenSubmitModifierLabel()
-  const selectedRepoName = React.useMemo(() => {
-    const repo = eligibleRepos.find((candidate) => candidate.id === repoId)
-    return repo?.displayName ?? repo?.path ?? 'This project'
-  }, [eligibleRepos, repoId])
-  const selectedProjectName = React.useMemo(() => {
-    const option = projectOptions.find((candidate) => candidate.id === selectedProjectId)
-    return option?.displayName ?? selectedRepoName
-  }, [projectOptions, selectedProjectId, selectedRepoName])
+  const projectDescriptionId = React.useId()
+  const [addRemoteHostMode, setAddRemoteHostMode] = React.useState<AddRemoteHostMode | null>(null)
+  const [setLocationOption, setSetLocationOption] = React.useState<NeedsProjectHostOption | null>(
+    null
+  )
+
+  const selectedRepo = eligibleRepos.find((candidate) => candidate.id === repoId)
+  const selectedRepoName = selectedRepo?.displayName ?? selectedRepo?.path ?? 'This project'
+  const selectedProjectName =
+    projectOptions.find((candidate) => candidate.id === selectedProjectId)?.displayName ??
+    selectedRepoName
+  const defaultCloneUrl = resolveProjectCloneUrlPrefill(projects, repos, selectedProjectId)
+  const readyProjectHostSetupOptions = projectHostSetupOptions.filter(
+    (option) => option.kind === 'ready'
+  )
+  const needsSetupProjectHostSetupOptions = projectHostSetupOptions.filter(
+    (option) => option.kind === 'needs-setup'
+  )
+  const shouldShowRunTargetPicker =
+    readyProjectHostSetupOptions.length > 0 ||
+    ephemeralVmRecipes.length > 0 ||
+    needsSetupProjectHostSetupOptions.length > 0
   const sshStatusLabel = selectedRepoSshStatus
     ? getSshStatusLabel(selectedRepoSshStatus)
     : translate('auto.components.NewWorkspaceComposerCard.notConnected', 'Not connected')
@@ -467,35 +483,32 @@ export default function NewWorkspaceComposerCard({
       : setupConfig?.kind === 'setup-and-default-tabs'
         ? 'Run setup and default tab commands now?'
         : 'Run setup now?'
-  const setupRunButtonLabel =
-    setupConfig?.kind === 'default-tabs'
-      ? 'Run commands now'
-      : setupConfig?.kind === 'setup-and-default-tabs'
-        ? 'Run commands now'
-        : 'Run setup now'
+  const setupRunButtonLabel = setupConfig?.kind === 'setup' ? 'Run setup now' : 'Run commands now'
   const setupSkipButtonLabel = setupConfig?.kind === 'setup' ? 'Skip for now' : 'Skip commands'
-  // Why: defaultTabs launch commands can run long too, but aren't the setup command this setting gates agent startup on.
   const showSetupAgentStartupPolicy =
     setupControlsEnabled && setupConfig !== null && setupConfig.kind !== 'default-tabs'
-
-  const handleSetDefaultAgent = React.useCallback(
-    (next: TuiAgent | 'blank' | null) => {
-      updateSettings({ defaultTuiAgent: next })
-    },
-    [updateSettings]
+  const agentCatalog = getAgentCatalog()
+  const enabledAgentIds = new Set(
+    filterEnabledTuiAgents(
+      agentCatalog.map((candidate) => candidate.id),
+      disabledTuiAgents
+    )
   )
+  const visibleQuickAgents = agentCatalog.filter((agent) => {
+    return (
+      enabledAgentIds.has(agent.id) &&
+      (props.detectedAgentIds === null || props.detectedAgentIds.has(agent.id))
+    )
+  })
 
   const cancelNameInputFocusFrame = React.useCallback((): void => {
-    if (nameInputFocusFrameRef.current === null) {
-      return
+    if (nameInputFocusFrameRef.current !== null) {
+      cancelAnimationFrame(nameInputFocusFrameRef.current)
+      nameInputFocusFrameRef.current = null
     }
-    cancelAnimationFrame(nameInputFocusFrameRef.current)
-    nameInputFocusFrameRef.current = null
   }, [])
-
   const setComposerNode = React.useCallback(
     (node: HTMLDivElement | null): void => {
-      // Why: the queued repo-picker focus is only valid while this composer exists.
       if (!node) {
         cancelNameInputFocusFrame()
       }
@@ -506,51 +519,22 @@ export default function NewWorkspaceComposerCard({
     },
     [cancelNameInputFocusFrame, composerRef, onComposerNodeChange]
   )
-
-  const focusNameInput = React.useCallback(() => {
-    // Why: move focus to the name field after the repo pick so keyboard flow continues instead of trapping in the repo popover.
+  const focusNameInput = React.useCallback((): void => {
     cancelNameInputFocusFrame()
     nameInputFocusFrameRef.current = requestAnimationFrame(() => {
       nameInputFocusFrameRef.current = null
       nameInputRef?.current?.focus()
     })
   }, [cancelNameInputFocusFrame, nameInputRef])
-
-  const visibleQuickAgents = React.useMemo(() => {
-    const enabledIds = new Set(
-      filterEnabledTuiAgents(
-        getAgentCatalog().map((agent) => agent.id),
-        disabledTuiAgents
-      )
-    )
-    return getAgentCatalog().filter(
-      (agent) =>
-        enabledIds.has(agent.id) && (detectedAgentIds === null || detectedAgentIds.has(agent.id))
-    )
-  }, [detectedAgentIds, disabledTuiAgents])
-
-  const handleAddRepo = React.useCallback((): void => {
-    // Why: swapping activeModal would unmount the composer, so the override layers Add Project on top instead.
+  const handleAddProject = React.useCallback((): void => {
     if (onAddProjectOverride) {
       onAddProjectOverride()
       return
     }
     openModal('add-repo')
   }, [onAddProjectOverride, openModal])
-  // Why: open the host-add form inline over the composer (not via Settings) so the user's
-  // in-progress workspace form survives; the new host lands in the store and flows straight
-  // back into the run-target picker without a navigation round-trip.
-  const [addRemoteHostMode, setAddRemoteHostMode] = React.useState<AddRemoteHostMode | null>(null)
-  const handleAddSshHost = React.useCallback((): void => {
-    setAddRemoteHostMode('ssh')
-  }, [])
-  const handleAddRemoteServer = React.useCallback((): void => {
-    setAddRemoteHostMode('server')
-  }, [])
-  const [setLocationOption, setSetLocationOption] =
-    React.useState<NeedsSetupProjectHostOption | null>(null)
   const handleSetLocation = React.useCallback(
-    (option: NeedsSetupProjectHostOption): void => {
+    (option: NeedsProjectHostOption): void => {
       setSetLocationOption(option)
       onNestedDialogOpenChange?.(true)
     },
@@ -567,14 +551,8 @@ export default function NewWorkspaceComposerCard({
     },
     [handleSetLocationClose, onProjectHostSetupChange]
   )
-  const projects = useAppStore((state) => state.projects)
-  const repos = useAppStore((state) => state.repos)
-  const defaultCloneUrl = React.useMemo(
-    () => resolveProjectCloneUrlPrefill(projects, repos, selectedProjectId),
-    [projects, repos, selectedProjectId]
-  )
   const handleConnectRunTargetHost = React.useCallback(
-    async (option: NeedsSetupProjectHostOption): Promise<void> => {
+    async (option: NeedsProjectHostOption): Promise<void> => {
       const action = option.connectAction
       if (!action) {
         return
@@ -584,25 +562,16 @@ export default function NewWorkspaceComposerCard({
           if (isSshConnectInFlight(action.targetId)) {
             return
           }
-          // Why: ssh.connect has no built-in timeout; a stalled connect would otherwise leave
-          // the row's spinner/disabled state stuck forever. Bound the UI wait — the backend
-          // keeps connecting and the picker updates from store SSH state if it later succeeds.
-          // The shared registry tracks that backend request (not this bounded wait), so the
-          // sidebar card control and terminal overlay for this host stay locked until it
-          // settles — a second dial on a passphrase-gated target means a second prompt.
           await withUiConnectTimeout(
             trackSshConnect(action.targetId, window.api.ssh.connect({ targetId: action.targetId }))
           )
           return
         }
-
         const response = await window.api.runtimeEnvironments.getStatus({
           selector: action.environmentId,
           timeoutMs: 15_000
         })
         const runtimeStatus = unwrapRuntimeRpcResult<RuntimeStatus>(response)
-        // Why: the composer button is only a reachability retry; the separate
-        // project setup flow remains a follow-up once the host is online.
         useAppStore.getState().setRuntimeEnvironmentStatus(action.environmentId, {
           status: runtimeStatus,
           checkedAt: Date.now()
@@ -626,59 +595,19 @@ export default function NewWorkspaceComposerCard({
     },
     []
   )
-  const handleNotePaste = React.useCallback((event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const text = event.clipboardData.getData('text/plain')
-    const byteLengthMeasurement = measureTextControlPasteByteLength(text, {
-      stopAfterBytes: TEXT_CONTROL_PASTE_DIRECT_MAX_BYTES
-    })
-    if (
-      !byteLengthMeasurement.exceededLimit &&
-      !shouldHandleTextControlPaste(text, { measuredByteLength: byteLengthMeasurement.byteLength })
-    ) {
-      return
-    }
-
-    event.preventDefault()
-    event.stopPropagation()
-    const textarea = event.currentTarget
-    // Why: large note pastes need one controlled owner so React gets a single final input event after chunked DOM insertion.
-    void pasteTextIntoTextControl(textarea, text, {
-      source: 'clipboard',
-      canContinue: (target) => target.ownerDocument.activeElement === target
-    })
-      .then((result) => {
-        if (result.status === 'rejected' && result.reason === 'too-large') {
-          toast.error(
-            translate(
-              'auto.components.NewWorkspaceComposerCard.notePasteTooLarge',
-              'Paste is too large for the note field.'
-            )
-          )
-        }
-      })
-      .catch(() => {})
-  }, [])
-  const projectDescriptionId = React.useId()
-  const readyProjectHostSetupOptions = React.useMemo(
-    () => projectHostSetupOptions.filter((option) => option.kind === 'ready'),
-    [projectHostSetupOptions]
-  )
-  const needsSetupProjectHostSetupOptions = React.useMemo(
-    () => projectHostSetupOptions.filter((option) => option.kind === 'needs-setup'),
-    [projectHostSetupOptions]
-  )
-  // Why: the picker now also hosts the Add host handoff; even a single ready
-  // host needs this affordance for users who have not registered the target yet.
-  const shouldShowRunTargetPicker =
-    readyProjectHostSetupOptions.length > 0 ||
-    ephemeralVmRecipes.length > 0 ||
-    needsSetupProjectHostSetupOptions.length > 0
-  const handleProjectHostSetupChange = React.useCallback(
-    (setupId: string): void => {
-      onProjectHostSetupChange?.(setupId)
+  const handleSetDefaultAgent = React.useCallback(
+    (next: TuiAgent | 'blank' | null): void => {
+      void updateSettings({ defaultTuiAgent: next })
     },
-    [onProjectHostSetupChange]
+    [updateSettings]
   )
+  const handleNamePlainEnter = React.useCallback((): void => {
+    const agentTrigger = composerRef?.current?.querySelector<HTMLElement>(
+      '[data-agent-combobox-root="true"][role="combobox"]'
+    )
+    agentTrigger?.focus()
+  }, [composerRef])
+
   useContextualTour(
     'workspace-creation',
     projectOptions.length > 0 && Boolean(selectedProjectId),
@@ -692,7 +621,6 @@ export default function NewWorkspaceComposerCard({
     <div
       ref={setComposerNode}
       data-workspace-composer-root="true"
-      // Why: preload routes native file drops by the nearest data-native-file-drop-target marker, so tag the root to catch card-wide drops.
       data-native-file-drop-target="composer"
       onDragEnter={dragHandlers.onDragEnter}
       onDragLeave={dragHandlers.onDragLeave}
