@@ -1,881 +1,83 @@
-/* eslint-disable max-lines -- Why: browser-side Electron-preload replacement; compatibility surface centralizes here. */
-import type {
-  PreloadApi,
-  PreflightStatus,
-  RefreshAgentsResult,
-  NativeChatApi,
-  NativeChatAppendedMessages
-} from '../../../preload/api-types'
-import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
-import { parseHostAccessLink } from '../../../shared/remote-pairing-address'
-import { verifyRemotePairingRuntimeStatus } from '../../../shared/remote-pairing-verification'
-import type { AiVaultDeleteSessionArgs } from '../../../shared/ai-vault-session-deletion'
-import type { AiVaultListArgs, AiVaultListResult } from '../../../shared/ai-vault-types'
-import type {
-  AiVaultSessionTitlesArgs,
-  AiVaultSessionTitlesResult
-} from '../../../shared/ai-vault-session-title'
-import type {
-  AiVaultPrepareSessionResumeArgs,
-  AiVaultPrepareSessionResumeResult
-} from '../../../shared/ai-vault-resume-preparation'
-import { buildNativeChatUnsubscribe } from '../../../shared/native-chat-stream-unsubscribe'
-import type {
-  ComputerUsePermissionSetupResult,
-  ComputerUsePermissionStatusResult
-} from '../../../shared/computer-use-permissions-types'
-import type { SearchResult } from '../../../shared/code-search-types'
-import type { DirEntry } from '../../../shared/filesystem-entry-types'
-import type {
-  GlobalSettings,
-  WorktreeVisibilityDefaults
-} from '../../../shared/global-settings-types'
-import type { OnboardingState } from '../../../shared/onboarding-state-types'
-import type { PersistedUIState } from '../../../shared/persisted-ui-state-types'
+import type { PreloadApi } from '../../../preload/api-types'
+import type { StatsSummary } from '../../../shared/process-stats-types'
+import { createWebE2EApi } from './preload-api/web-e2e-api'
 import {
-  omitPairingLocalUiFields,
-  type PairedUiState,
-  type PairingLocalUiField
-} from '../../../shared/pairing-local-ui-fields'
-import type { MemorySnapshot, StatsSummary } from '../../../shared/process-stats-types'
-import type { Repo } from '../../../shared/repo-types'
-import type {
-  WorkspaceSessionPatch,
-  WorkspaceSessionState
-} from '../../../shared/workspace-session-state-types'
-import type {
-  ForceDeleteWorktreeBranchResult,
-  RemoveWorktreeResult
-} from '../../../shared/worktree/create-types'
-import type { WorkspaceLineage, WorktreeLineage } from '../../../shared/worktree/lineage-types'
-import type { DetectedWorktreeListResult, Worktree } from '../../../shared/worktree/types'
-import type { SkillDiscoveryResult } from '../../../shared/skills'
-import type { SkillFreshnessInventory } from '../../../shared/skill-freshness'
-import type { SshConnectionState, SshTarget } from '../../../shared/ssh-types'
+  createAccountsApi,
+  createGrokAccountsApi,
+  createMiniMaxCredentialsApi
+} from './preload-api/web-agent-accounts-api'
+import { createAgentHooksApi } from './preload-api/web-agent-hooks-api'
+import { createWebAgentStatusApi } from './preload-api/web-agent-status-api'
+import { createWebAiVaultApi } from './preload-api/web-ai-vault-api'
+import { createWebAppApi } from './preload-api/web-app-api'
+import { createBrowserApi, createEmulatorApi } from './preload-api/web-browser-api'
+import { createCliApi } from './preload-api/web-cli-api'
+import { createWebDiagnosticsApi } from './preload-api/web-diagnostics-api'
+import { createFallbackProxy, withFallback } from './preload-api/web-fallback-api'
+import { createFileApi } from './preload-api/web-filesystem-api'
+import { createGitApi } from './preload-api/web-git-api'
+import { createWebGithubCacheApi } from './preload-api/web-github-cache-api'
+import { createGitHubApi } from './preload-api/web-github-api'
+import { createGitLabApi } from './preload-api/web-gitlab-api'
 import {
-  getDefaultOnboardingState,
-  getDefaultSettings,
-  getDefaultUIState,
-  getDefaultWorkspaceSession,
-  getWorktreeCardModeProperties,
-  normalizeAgentActivityDisplayMode,
-  normalizeWorktreeCardProperties,
-  ONBOARDING_FLOW_VERSION
-} from '../../../shared/constants'
-import {
-  createDefaultLocalOrcaProfile,
-  DEFAULT_LOCAL_ORCA_PROFILE_ID
-} from '../../../shared/orca-profiles'
-import { legacyBaseRefSearchResult } from '../../../shared/base-ref-search-result'
-import { EMPTY_PTY_MAIN_DELIVERY_DIAGNOSTICS } from '../../../shared/pty-delivery-diagnostics'
-import { createE2EConfig } from '../../../shared/e2e-config'
-import { relativePathInsideRoot } from '../../../shared/cross-platform-path'
-import { readRetiredNameRegistryForRepo } from '../../../shared/worktree/retired-name-cache'
-import { EMPTY_RETIRED_NAME_REGISTRY } from '../../../shared/worktree/retired-name-registry'
-import {
-  applyPRBotAuthorOverride,
-  normalizePRBotAuthorOverrides
-} from '../../../shared/pr-bot-author-overrides'
-import {
-  LOCAL_EXECUTION_HOST_ID,
-  normalizeExecutionHostScope,
-  normalizeExecutionHostId,
-  parseExecutionHostId,
-  toRuntimeExecutionHostId,
-  type ExecutionHostId
-} from '../../../shared/execution-host'
-import { toRuntimeWorktreeSelector } from '../runtime/runtime-worktree-selector'
-import { callAbortableRuntimeEnvironment } from '../runtime/abortable-runtime-environment-call'
-import { normalizeDisabledTuiAgents } from '../../../shared/tui-agent-selection'
-import {
-  normalizeTuiAgentArgsRecord,
-  normalizeTuiAgentEnvRecord
-} from '../../../shared/tui-agent-launch-defaults'
-import { normalizeAutoRenameBranchFromWorkDefaultOn } from '../../../shared/auto-rename-branch-from-work-settings'
-import { normalizeTerminalCursorStyleDefault } from '../../../shared/terminal-cursor-style-settings'
-import {
-  normalizeOsc52ClipboardDefaultOn,
-  osc52ClipboardDefaultOnOverridesPersistedOff
-} from '../../../shared/osc52-clipboard-settings'
-import { normalizeTerminalCustomThemes } from '../../../shared/terminal-custom-themes'
-import { normalizeUiLanguage } from '../../../shared/ui-language'
-import { normalizeUsagePercentageDisplay } from '../../../shared/usage-percentage-display'
-import { normalizeStatusBarUsageMode } from '../../../shared/status-bar-usage-mode'
-import {
-  computerAwakeSettingsForMode,
-  normalizeComputerAwakeMode
-} from '../../../shared/computer-awake-mode'
-import { normalizeWorktreeVisibilityDefaults } from '../../../shared/external-worktree-visibility'
-import type { RateLimitState } from '../../../shared/rate-limit-types'
-import type { RuntimeStatus, RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
-import { assertFileMutationOwnershipCapability } from '../../../shared/file-mutation-ownership'
-import {
-  findKeybindingConflicts,
-  formatKeybindingList,
-  getKeybindingPlatform,
-  isKeybindingActionId,
-  normalizeKeybindingArrayForAction,
-  type KeybindingActionId,
-  type KeybindingFileDiagnostic,
-  type KeybindingFileSnapshot,
-  type KeybindingOverrides,
-  type KeybindingPlatform
-} from '../../../shared/keybindings'
-import {
-  clearStoredWebRuntimeEnvironment,
-  createStoredWebRuntimeEnvironment,
-  getPreferredWebPairingOffer,
-  readStoredWebRuntimeEnvironment,
-  redactStoredWebRuntimeEnvironment,
-  saveStoredWebRuntimeEnvironment,
-  updateStoredEnvironmentRuntimeId,
-  type StoredWebRuntimeEnvironment
-} from './web-runtime-environment'
-import { parseWebPairingInput } from './web-pairing'
-import { copyClipboardTextViaExecCommand } from './web-clipboard-copy-fallback'
-import { WebRuntimeClient } from './web-runtime-client'
-import { isWebRuntimeUnauthorizedError } from './web-runtime-client-error'
-import { RuntimeRpcCallQueuePool } from '../../../shared/runtime-rpc-call-queue'
-import {
-  assertClipboardTextWriteWithinLimitWithYield,
-  assertClipboardTextWithinLimitWithYield,
-  type ReadClipboardTextOptions
-} from '../../../shared/clipboard-text'
-import {
-  CLIPBOARD_IMAGE_MAX_BASE64_CHARS,
-  CLIPBOARD_IMAGE_MAX_PIXELS,
-  CLIPBOARD_IMAGE_MAX_SOURCE_BYTES,
-  CLIPBOARD_IMAGE_TOO_LARGE_ERROR,
-  assertClipboardImageByteLengthWithinLimit,
-  assertClipboardImageDimensionsWithinLimit
-} from '../../../shared/clipboard-image'
-import { sanitizeWebRuntimeWorkspaceSession } from './web-workspace-session'
-import {
-  normalizeFeatureInteractions,
-  type FeatureInteractionId,
-  type FeatureInteractionState
-} from '../../../shared/feature-interactions'
-import { normalizeContextualTourIds, type ContextualTourId } from '../../../shared/contextual-tours'
-import { translate } from '@/i18n/i18n'
-import { translateHostAccessLinkError } from '@/lib/remote-pairing-copy'
-import { getDefaultCreateProjectParent } from '@/components/sidebar/create-project-defaults'
-import {
-  parseRuntimeNativeChatReadSessionResult,
-  parseRuntimeNativeChatTurnLifecycle
-} from '@/components/native-chat/native-chat-runtime-contract'
-import { createWebFileMutationMethods } from './web-file-mutation-methods'
-import { mergeWorkspaceCleanupUIState } from '../../../shared/workspace-cleanup-ui-state'
-
-const SETTINGS_STORAGE_KEY = 'orca.web.settings.v1'
-const UI_STORAGE_KEY = 'orca.web.ui.v1'
-const SESSION_STORAGE_KEY = 'orca.web.workspaceSession.v1'
-const ONBOARDING_STORAGE_KEY = 'orca.web.onboarding.v1'
-const GITHUB_CACHE_STORAGE_KEY = 'orca.web.githubCache.v1'
-const KEYBINDINGS_STORAGE_KEY = 'orca.web.keybindings.v1'
-// Why: paired web clients lack Electron env/preload state; the E2E build gate keeps URL overrides out of releases.
-const webE2EExposeStore = String(import.meta.env.VITE_EXPOSE_STORE) === 'true'
-const webE2EQuery = webE2EExposeStore ? new URLSearchParams(window.location.search) : null
-const webE2EConfig = createE2EConfig({
-  exposeStore: webE2EExposeStore,
-  terminalParkingDelayMs: Number(webE2EQuery?.get('orcaE2ETerminalParkingDelayMs')) || null,
-  terminalRetentionLimit: Number(webE2EQuery?.get('orcaE2ETerminalRetentionLimit')) || null
-})
-// Why: paired clients need parity for large dev sessions; the runtime default stays capped for lower-level RPC callers.
-const WEB_RUNTIME_WORKTREE_LIST_LIMIT = 10_000
-const MAX_CLIPBOARD_IMAGE_BASE64_CHARS = CLIPBOARD_IMAGE_MAX_BASE64_CHARS
-export const MAX_CLIPBOARD_IMAGE_SOURCE_BYTES = CLIPBOARD_IMAGE_MAX_SOURCE_BYTES
-export const MAX_CLIPBOARD_IMAGE_PIXELS = CLIPBOARD_IMAGE_MAX_PIXELS
-export const CLIPBOARD_IMAGE_UPLOAD_CHUNK_BASE64_CHARS = 512 * 1024
-export const CLIPBOARD_IMAGE_SINGLE_FRAME_FALLBACK_BASE64_CHARS = 256 * 1024
-const CLIPBOARD_IMAGE_SAVE_TIMEOUT_MS = 30_000
-
-let activeEnvironment: StoredWebRuntimeEnvironment | null = readStoredWebRuntimeEnvironment()
-let worktreeVisibilityDefaultsRuntimeEnvironmentId: string | null = null
-let worktreeVisibilityDefaultsRuntimeValue: WorktreeVisibilityDefaults | null = null
-let activeClient: WebRuntimeClient | null = null
-let activeClientEnvironmentId: string | null = null
-const manuallyDisconnectedEnvironmentIds = new Set<string>()
-let cachedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
-let cachedDetectedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
-const runtimeCallQueuePool = new RuntimeRpcCallQueuePool()
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : ''
-      const commaIndex = result.indexOf(',')
-      resolve(commaIndex === -1 ? result : result.slice(commaIndex + 1))
-    }
-    reader.onerror = () => reject(reader.error ?? new Error('Failed to read clipboard image'))
-    reader.readAsDataURL(blob)
-  })
-}
-
-function assertClipboardImageBlobWithinLimit(blob: Blob): void {
-  assertClipboardImageByteLengthWithinLimit(blob.size)
-}
-
-async function convertImageBlobToPng(blob: Blob): Promise<Blob> {
-  assertClipboardImageBlobWithinLimit(blob)
-  const bitmap = await createImageBitmap(blob)
-  try {
-    assertClipboardImageDimensionsWithinLimit(bitmap)
-    const canvas = document.createElement('canvas')
-    canvas.width = bitmap.width
-    canvas.height = bitmap.height
-    const context = canvas.getContext('2d')
-    if (!context || canvas.width <= 0 || canvas.height <= 0) {
-      throw new Error('Clipboard image could not be decoded')
-    }
-    context.drawImage(bitmap, 0, 0)
-    return await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((png) => {
-        if (!png) {
-          reject(new Error('Clipboard image could not be encoded as PNG'))
-          return
-        }
-        try {
-          assertClipboardImageBlobWithinLimit(png)
-        } catch (error) {
-          reject(error)
-          return
-        }
-        resolve(png)
-      }, 'image/png')
-    })
-  } finally {
-    bitmap.close()
-  }
-}
-
-async function readClipboardImagePngBase64(): Promise<string | null> {
-  const clipboard = navigator.clipboard as
-    | (Clipboard & { read?: () => Promise<ClipboardItem[]> })
-    | undefined
-  if (!clipboard?.read) {
-    return null
-  }
-  const items = await clipboard.read()
-  for (const item of items) {
-    const imageType = item.types.find((type) => type.startsWith('image/'))
-    if (!imageType) {
-      continue
-    }
-    const blob = await item.getType(imageType)
-    assertClipboardImageBlobWithinLimit(blob)
-    const pngBlob = imageType === 'image/png' ? blob : await convertImageBlobToPng(blob)
-    return blobToBase64(pngBlob)
-  }
-  return null
-}
-
-function invalidateRuntimeWorktreeCaches(): void {
-  cachedWorktrees = null
-  cachedDetectedWorktrees = null
-}
-
-type WebSettingsApi = NonNullable<PreloadApi['settings']>
-type WebKeybindingsApi = NonNullable<PreloadApi['keybindings']>
-type WebGitHubApi = NonNullable<PreloadApi['gh']>
-type WebGitHubResult<K extends keyof WebGitHubApi> = Awaited<ReturnType<WebGitHubApi[K]>>
-type WebRuntimeResultCaller = <TResult>(
-  method: string,
-  params?: unknown,
-  timeoutMs?: number
-) => Promise<TResult>
-type WebRuntimeEnvelopeCaller = <TResult>(
-  method: string,
-  params?: unknown,
-  timeoutMs?: number
-) => Promise<RuntimeRpcResponse<TResult>>
-type WebGitHubRouteKey =
-  | 'repoSlug'
-  | 'repoUpstream'
-  | 'prForBranch'
-  | 'issue'
-  | 'workItem'
-  | 'workItemByOwnerRepo'
-  | 'workItemDetails'
-  | 'prFileContents'
-  | 'listIssues'
-  | 'createIssue'
-  | 'countWorkItems'
-  | 'listWorkItems'
-  | 'prChecks'
-  | 'prCheckDetails'
-  | 'rerunPRChecks'
-  | 'prComments'
-  | 'setPRCommentReaction'
-  | 'resolveReviewThread'
-  | 'setPRFileViewed'
-  | 'updatePRTitle'
-  | 'mergePR'
-  | 'setPRAutoMerge'
-  | 'updatePRState'
-  | 'requestPRReviewers'
-  | 'removePRReviewers'
-  | 'updateIssue'
-  | 'addIssueComment'
-  | 'addPRReviewCommentReply'
-  | 'addPRReviewComment'
-  | 'listLabels'
-  | 'listAssignableUsers'
-  | 'rateLimit'
-  | 'listAccessibleProjects'
-  | 'resolveProjectRef'
-  | 'listProjectViews'
-  | 'getProjectViewTable'
-  | 'projectWorkItemDetailsBySlug'
-  | 'updateProjectItemField'
-  | 'clearProjectItemField'
-  | 'updateIssueBySlug'
-  | 'updatePullRequestBySlug'
-  | 'addIssueCommentBySlug'
-  | 'updateIssueCommentBySlug'
-  | 'deleteIssueCommentBySlug'
-  | 'listLabelsBySlug'
-  | 'listAssignableUsersBySlug'
-  | 'listIssueTypesBySlug'
-  | 'updateIssueTypeBySlug'
-type WebGitHubRuntimeMethod =
-  | 'github.repoSlug'
-  | 'github.repoUpstream'
-  | 'github.prForBranch'
-  | 'github.issue'
-  | 'github.workItem'
-  | 'github.workItemByOwnerRepo'
-  | 'github.workItemDetails'
-  | 'github.prFileContents'
-  | 'github.listIssues'
-  | 'github.createIssue'
-  | 'github.countWorkItems'
-  | 'github.listWorkItems'
-  | 'github.prChecks'
-  | 'github.prCheckDetails'
-  | 'github.rerunPRChecks'
-  | 'github.prComments'
-  | 'github.setPRCommentReaction'
-  | 'github.resolveReviewThread'
-  | 'github.setPRFileViewed'
-  | 'github.updatePRTitle'
-  | 'github.mergePR'
-  | 'github.setPRAutoMerge'
-  | 'github.updatePRState'
-  | 'github.requestPRReviewers'
-  | 'github.removePRReviewers'
-  | 'github.updateIssue'
-  | 'github.addIssueComment'
-  | 'github.addPRReviewCommentReply'
-  | 'github.addPRReviewComment'
-  | 'github.listLabels'
-  | 'github.listAssignableUsers'
-  | 'github.rateLimit'
-  | 'github.project.listAccessible'
-  | 'github.project.resolveRef'
-  | 'github.project.listViews'
-  | 'github.project.viewTable'
-  | 'github.project.workItemDetailsBySlug'
-  | 'github.project.updateItemField'
-  | 'github.project.clearItemField'
-  | 'github.project.updateIssueBySlug'
-  | 'github.project.updatePullRequestBySlug'
-  | 'github.project.addIssueCommentBySlug'
-  | 'github.project.updateIssueCommentBySlug'
-  | 'github.project.deleteIssueCommentBySlug'
-  | 'github.project.listLabelsBySlug'
-  | 'github.project.listAssignableUsersBySlug'
-  | 'github.project.listIssueTypesBySlug'
-  | 'github.project.updateIssueTypeBySlug'
-type WebGitLabApi = NonNullable<PreloadApi['gl']>
-type WebGitLabResult<K extends keyof WebGitLabApi> = Awaited<ReturnType<WebGitLabApi[K]>>
-type WebGitLabRouteKey =
-  | 'diagnoseAuth'
-  | 'rateLimit'
-  | 'listMRs'
-  | 'listWorkItems'
-  | 'listIssues'
-  | 'createIssue'
-  | 'updateIssue'
-  | 'addIssueComment'
-  | 'listLabels'
-  | 'todos'
-  | 'workItemDetails'
-  | 'closeMR'
-  | 'reopenMR'
-  | 'mergeMR'
-  | 'updateMR'
-  | 'updateMRReviewers'
-  | 'addMRComment'
-  | 'addMRInlineComment'
-  | 'resolveMRDiscussion'
-  | 'jobTrace'
-  | 'retryJob'
-  | 'workItemByPath'
-type WebGitLabRuntimeMethod =
-  | 'gitlab.diagnoseAuth'
-  | 'gitlab.rateLimit'
-  | 'gitlab.listMRs'
-  | 'gitlab.listWorkItems'
-  | 'gitlab.listIssues'
-  | 'gitlab.createIssue'
-  | 'gitlab.updateIssue'
-  | 'gitlab.addIssueComment'
-  | 'gitlab.listLabels'
-  | 'gitlab.todos'
-  | 'gitlab.workItemDetails'
-  | 'gitlab.updateMRState'
-  | 'gitlab.mergeMR'
-  | 'gitlab.updateMR'
-  | 'gitlab.updateMRReviewers'
-  | 'gitlab.addMRComment'
-  | 'gitlab.addMRInlineComment'
-  | 'gitlab.resolveMRDiscussion'
-  | 'gitlab.jobTrace'
-  | 'gitlab.retryJob'
-  | 'gitlab.workItemByPath'
-type WebKeybindingDocument = {
-  version: 1
-  keybindings: KeybindingOverrides
-  platforms: Partial<Record<KeybindingPlatform, KeybindingOverrides>>
-}
-
-export const GITHUB_WEB_RPC_METHODS = {
-  repoSlug: 'github.repoSlug',
-  repoUpstream: 'github.repoUpstream',
-  prForBranch: 'github.prForBranch',
-  issue: 'github.issue',
-  workItem: 'github.workItem',
-  workItemByOwnerRepo: 'github.workItemByOwnerRepo',
-  workItemDetails: 'github.workItemDetails',
-  prFileContents: 'github.prFileContents',
-  listIssues: 'github.listIssues',
-  createIssue: 'github.createIssue',
-  countWorkItems: 'github.countWorkItems',
-  listWorkItems: 'github.listWorkItems',
-  prChecks: 'github.prChecks',
-  prCheckDetails: 'github.prCheckDetails',
-  rerunPRChecks: 'github.rerunPRChecks',
-  prComments: 'github.prComments',
-  setPRCommentReaction: 'github.setPRCommentReaction',
-  resolveReviewThread: 'github.resolveReviewThread',
-  setPRFileViewed: 'github.setPRFileViewed',
-  updatePRTitle: 'github.updatePRTitle',
-  mergePR: 'github.mergePR',
-  setPRAutoMerge: 'github.setPRAutoMerge',
-  updatePRState: 'github.updatePRState',
-  requestPRReviewers: 'github.requestPRReviewers',
-  removePRReviewers: 'github.removePRReviewers',
-  updateIssue: 'github.updateIssue',
-  addIssueComment: 'github.addIssueComment',
-  addPRReviewCommentReply: 'github.addPRReviewCommentReply',
-  addPRReviewComment: 'github.addPRReviewComment',
-  listLabels: 'github.listLabels',
-  listAssignableUsers: 'github.listAssignableUsers',
-  rateLimit: 'github.rateLimit',
-  listAccessibleProjects: 'github.project.listAccessible',
-  resolveProjectRef: 'github.project.resolveRef',
-  listProjectViews: 'github.project.listViews',
-  getProjectViewTable: 'github.project.viewTable',
-  projectWorkItemDetailsBySlug: 'github.project.workItemDetailsBySlug',
-  updateProjectItemField: 'github.project.updateItemField',
-  clearProjectItemField: 'github.project.clearItemField',
-  updateIssueBySlug: 'github.project.updateIssueBySlug',
-  updatePullRequestBySlug: 'github.project.updatePullRequestBySlug',
-  addIssueCommentBySlug: 'github.project.addIssueCommentBySlug',
-  updateIssueCommentBySlug: 'github.project.updateIssueCommentBySlug',
-  deleteIssueCommentBySlug: 'github.project.deleteIssueCommentBySlug',
-  listLabelsBySlug: 'github.project.listLabelsBySlug',
-  listAssignableUsersBySlug: 'github.project.listAssignableUsersBySlug',
-  listIssueTypesBySlug: 'github.project.listIssueTypesBySlug',
-  updateIssueTypeBySlug: 'github.project.updateIssueTypeBySlug'
-} as const satisfies Record<WebGitHubRouteKey, WebGitHubRuntimeMethod>
-
-export const GITLAB_WEB_RPC_METHODS = {
-  diagnoseAuth: 'gitlab.diagnoseAuth',
-  rateLimit: 'gitlab.rateLimit',
-  listMRs: 'gitlab.listMRs',
-  listWorkItems: 'gitlab.listWorkItems',
-  listIssues: 'gitlab.listIssues',
-  createIssue: 'gitlab.createIssue',
-  updateIssue: 'gitlab.updateIssue',
-  addIssueComment: 'gitlab.addIssueComment',
-  listLabels: 'gitlab.listLabels',
-  todos: 'gitlab.todos',
-  workItemDetails: 'gitlab.workItemDetails',
-  closeMR: 'gitlab.updateMRState',
-  reopenMR: 'gitlab.updateMRState',
-  mergeMR: 'gitlab.mergeMR',
-  updateMR: 'gitlab.updateMR',
-  updateMRReviewers: 'gitlab.updateMRReviewers',
-  addMRComment: 'gitlab.addMRComment',
-  addMRInlineComment: 'gitlab.addMRInlineComment',
-  resolveMRDiscussion: 'gitlab.resolveMRDiscussion',
-  jobTrace: 'gitlab.jobTrace',
-  retryJob: 'gitlab.retryJob',
-  workItemByPath: 'gitlab.workItemByPath'
-} as const satisfies Record<WebGitLabRouteKey, WebGitLabRuntimeMethod>
-
-const WEB_KEYBINDING_PLATFORMS: readonly KeybindingPlatform[] = ['darwin', 'linux', 'win32']
-const webKeybindingListeners = new Set<(snapshot: KeybindingFileSnapshot) => void>()
+  createComputerUsePermissionsApi,
+  createDeveloperPermissionsApi,
+  createPreflightApi,
+  createSkillsApi
+} from './preload-api/web-host-capability-api'
+import { createWebKeybindingsApi } from './preload-api/web-keybindings-api'
+import { createMacosTccPromptsApi } from './preload-api/web-macos-tcc-api'
+import { createEmptyMemorySnapshot } from './preload-api/web-memory-api'
+import { createWebMobileApi } from './preload-api/web-mobile-api'
+import { createWebNativeChatApi } from './preload-api/web-native-chat-api'
+import { createNotificationsApi } from './preload-api/web-notifications-api'
+import { createWebOnboardingApi } from './preload-api/web-onboarding-api'
+import { createWebOrcaProfilesApi } from './preload-api/web-orca-profiles-api'
+import { createWebPlatformApi } from './preload-api/web-platform-api'
+import { createRateLimitsApi } from './preload-api/web-rate-limits-api'
+import { createReposApi } from './preload-api/web-repositories-api'
+import { createHooksApi, createRuntimeNamespaceApi } from './preload-api/web-review-api'
+import { callRuntimeResult } from './preload-api/web-runtime-calls'
+import { createWebRuntimeApi } from './preload-api/web-runtime-api'
+import { createRuntimeEnvironmentsApi } from './preload-api/web-runtime-environments-api'
+import { webRuntimeState } from './preload-api/web-runtime-session'
+import { createWebSettingsApi } from './preload-api/web-settings-api'
+import { createShellApi } from './preload-api/web-shell-api'
+import { createWebStarNagApi } from './preload-api/web-star-nag-api'
+import { createWebTelemetryApi } from './preload-api/web-telemetry-api'
+import { createPtyApi, createSshApi } from './preload-api/web-terminal-api'
+import { createWebUiApi } from './preload-api/web-ui-api'
+import { createUpdaterApi } from './preload-api/web-updater-api'
+import { createWebWorkspacePortsApi } from './preload-api/web-workspace-ports-api'
+import { createWebWorkspaceSessionApi } from './preload-api/web-workspace-session-api'
+import { createWorktreesApi } from './preload-api/web-worktrees-api'
+import { readStoredWebRuntimeEnvironment } from './web-runtime-environment'
 
 export function installWebPreloadApi(): void {
-  activeEnvironment = readStoredWebRuntimeEnvironment()
+  webRuntimeState.activeEnvironment = readStoredWebRuntimeEnvironment()
   const webWindow = window as unknown as { __ORCA_WEB_CLIENT__?: boolean }
   webWindow.__ORCA_WEB_CLIENT__ = true
   window.electron = createFallbackProxy(['electron']) as Window['electron']
   window.api = withFallback(createWebPreloadApi(), []) as PreloadApi
 }
 
-async function writeWebClipboardText(text: string): Promise<void> {
-  await assertClipboardTextWriteWithinLimitWithYield(text)
-  const clipboard = navigator.clipboard
-  if (typeof clipboard?.writeText === 'function') {
-    try {
-      await clipboard.writeText(text)
-      return
-    } catch (error) {
-      // Preserve the current user-activation turn for the synchronous fallback.
-      if (copyClipboardTextViaExecCommand(text)) {
-        return
-      }
-      throw error
-    }
-  }
-  if (!copyClipboardTextViaExecCommand(text)) {
-    throw new Error('Clipboard write is unavailable in this browser context')
-  }
-}
-
 function createWebPreloadApi(): Partial<PreloadApi> {
-  const webOrcaProfileAuthStatus = () =>
-    Promise.resolve({
-      activeProfileId: DEFAULT_LOCAL_ORCA_PROFILE_ID,
-      configured: false,
-      state: 'unconfigured' as const,
-      persistence: 'none' as const,
-      setupMessage: 'Orca Cloud sign-in is not available in the browser fallback.'
-    })
-
   return {
-    app: {
-      getIdentity: () =>
-        Promise.resolve({
-          name: 'Orca',
-          isDev: false,
-          devLabel: null,
-          devBranch: null,
-          devWorktreeName: null,
-          devRepoRoot: null,
-          dockBadgeLabel: null
-        }),
-      getFeatureWallAssetBaseUrl: () => Promise.resolve('/'),
-      relaunch: () => Promise.resolve(window.location.reload()),
-      restart: () => Promise.resolve(window.location.reload()),
-      reload: () => Promise.resolve(window.location.reload()),
-      stageBeforeUnloadSync: ({ sessions, ui }) => {
-        // Why: beforeunload cannot await the paired runtime, so the web adapter
-        // guarantees immediate browser-local durability for the final snapshot.
-        for (const { state, hostId } of sessions) {
-          writeJson(sessionStorageKeyForHost(hostId), sanitizeWebRuntimeWorkspaceSession(state))
-        }
-        writeJson(UI_STORAGE_KEY, mergeWebUIState(readLocalWebUIState(), ui))
-      },
-      // Staging already wrote through to browser storage, so there is nothing left to join.
-      awaitBeforeUnloadCheckpoint: () => Promise.resolve(),
-      awaitFirstWindowStartupServices: () => Promise.resolve(),
-      recoverLegacyWorkerTerminalsForRendererStartup: () => Promise.resolve(),
-      startupDiagnostic: () => Promise.resolve(),
-      getKeyboardInputSourceId: () => Promise.resolve(null),
-      // The web client cannot inspect local Mission Control shortcuts.
-      getMacCapturedDigitRowChords: () => Promise.resolve([]),
-      getKeyboardLayoutSnapshot: () => Promise.resolve(null),
-      onKeyboardLayoutChanged: () => () => undefined,
-      setUnreadDockBadgeCount: () => Promise.resolve(),
-      getFloatingTerminalCwd: () => Promise.resolve(''),
-      getFloatingMarkdownDirectory: () => Promise.resolve(''),
-      pickFloatingMarkdownDocument: () => Promise.resolve(null),
-      pickFloatingWorkspaceDirectory: () => Promise.resolve(null),
-      // Browser fallback has no app-owned userData dir; reject so the sentinel can't claim sensitive evidence was persisted.
-      writeTerminalRenderDesyncEvidence: () =>
-        Promise.reject(
-          new Error('Terminal render evidence is unavailable in the browser fallback.')
-        )
-    },
-    starNag: {
-      onShow: () => noopUnsubscribe,
-      onHide: () => noopUnsubscribe,
-      dismiss: () => Promise.resolve(),
-      later: () => Promise.resolve(),
-      complete: () => Promise.resolve(),
-      disable: () => Promise.resolve(),
-      openWeb: () => Promise.resolve(),
-      starOrca: () => Promise.resolve(false),
-      forceShow: () => Promise.resolve(),
-      agentValueMoment: () => Promise.resolve({ status: 'skipped' }),
-      showAgentValueMoment: () => Promise.resolve(),
-      onboardingCompleted: () => Promise.resolve()
-    },
-    platform: {
-      get: () => ({
-        platform: getBrowserPlatform(),
-        osRelease: '',
-        arch: '',
-        shell: '',
-        displayServer: null
-      })
-    },
-    workspacePorts: {
-      // Why: browser-local workspaces have no host process to inspect; return capability state instead of the generic undefined fallback.
-      scan: () =>
-        Promise.resolve({
-          platform: getBrowserPlatform(),
-          scannedAt: Date.now(),
-          ports: [],
-          unavailableReason: 'Workspace port scanning is unavailable for browser-local workspaces.'
-        }),
-      kill: () =>
-        Promise.resolve({
-          ok: false,
-          reason: 'Workspace port management is unavailable for browser-local workspaces.'
-        }),
-      onAdvertisedUrlChanged: () => noopUnsubscribe
-    },
-    orcaProfiles: {
-      list: () =>
-        Promise.resolve({
-          activeProfileId: DEFAULT_LOCAL_ORCA_PROFILE_ID,
-          profiles: [createDefaultLocalOrcaProfile(0)],
-          multiProfileUi: false
-        }),
-      authStatus: webOrcaProfileAuthStatus,
-      createLocal: () =>
-        Promise.resolve({
-          activeProfileId: DEFAULT_LOCAL_ORCA_PROFILE_ID,
-          profiles: [createDefaultLocalOrcaProfile(0)],
-          profile: createDefaultLocalOrcaProfile(0)
-        }),
-      createCloudLinked: async () => ({
-        status: 'unconfigured',
-        auth: await webOrcaProfileAuthStatus()
-      }),
-      switchProfile: () => Promise.resolve({ status: 'already-active' }),
-      transferProject: (args) =>
-        Promise.resolve({
-          status: 'duplicate-target',
-          sourceProfileId: args.sourceProfileId,
-          targetProfileId: args.targetProfileId,
-          sourceRepoId: args.repoId,
-          duplicateRepoId: args.repoId
-        }),
-      findProjectProfiles: async () => ({ projects: [] }),
-      connectCurrent: async () => ({
-        status: 'unconfigured',
-        auth: await webOrcaProfileAuthStatus()
-      }),
-      refreshAuth: async () => ({
-        status: 'unconfigured',
-        auth: await webOrcaProfileAuthStatus()
-      }),
-      signOutCurrent: async () => ({
-        status: 'signed-out',
-        auth: await webOrcaProfileAuthStatus(),
-        activeProfileId: DEFAULT_LOCAL_ORCA_PROFILE_ID,
-        profiles: [createDefaultLocalOrcaProfile(0)]
-      }),
-      selectOrg: async () => ({
-        status: 'unconfigured',
-        auth: await webOrcaProfileAuthStatus()
-      }),
-      orgMembersList: async () => ({ status: 'unconfigured' }),
-      orgMemberInvite: async () => ({ status: 'unconfigured' }),
-      orgInviteRevoke: async () => ({ status: 'unconfigured' }),
-      orgMemberChangeRole: async () => ({ status: 'unconfigured' }),
-      orgMemberRemove: async () => ({ status: 'unconfigured' })
-    },
-    e2e: {
-      getConfig: () => webE2EConfig
-    },
-    settings: {
-      get: async () => getRuntimeBackedStoredSettings(),
-      // Why: localStorage-backed settings are synchronous, so the pre-hydration kill-switch read works the same as desktop.
-      getSync: () => settingsForActiveVisibilityOwner(getStoredSettings()),
-      set: async (updates) => {
-        const sanitizedUpdates = { ...updates }
-        const runtimeEnvironment = requireActiveEnvironmentOrNull()
-        delete sanitizedUpdates.activeRuntimeEnvironmentId
-        if (
-          'worktreeVisibilityDefaults' in sanitizedUpdates &&
-          runtimeEnvironment &&
-          runtimeEnvironment.id !== worktreeVisibilityDefaultsRuntimeEnvironmentId
-        ) {
-          delete sanitizedUpdates.worktreeVisibilityDefaults
-        }
-        if ('worktreeVisibilityDefaults' in sanitizedUpdates) {
-          sanitizedUpdates.worktreeVisibilityDefaults = {
-            ...settingsForActiveVisibilityOwner(getStoredSettings()).worktreeVisibilityDefaults,
-            ...sanitizedUpdates.worktreeVisibilityDefaults
-          }
-        }
-        if ('computerAwakeMode' in sanitizedUpdates) {
-          Object.assign(
-            sanitizedUpdates,
-            computerAwakeSettingsForMode(
-              normalizeComputerAwakeMode(
-                sanitizedUpdates.computerAwakeMode,
-                sanitizedUpdates.keepComputerAwakeWhileAgentsRun
-              )
-            )
-          )
-        } else if ('keepComputerAwakeWhileAgentsRun' in sanitizedUpdates) {
-          Object.assign(
-            sanitizedUpdates,
-            computerAwakeSettingsForMode(
-              sanitizedUpdates.keepComputerAwakeWhileAgentsRun ? 'auto' : 'off'
-            )
-          )
-        }
-        if ('autoRenameBranchFromWorkDefaultedOn' in sanitizedUpdates) {
-          sanitizedUpdates.autoRenameBranchFromWorkDefaultedOn = true
-        }
-        if ('terminalCursorStyle' in sanitizedUpdates) {
-          Object.assign(
-            sanitizedUpdates,
-            normalizeTerminalCursorStyleDefault(
-              { terminalCursorStyle: sanitizedUpdates.terminalCursorStyle },
-              { preserveExplicitValue: true }
-            )
-          )
-        }
-        const localUpdates = { ...sanitizedUpdates }
-        if (runtimeEnvironment) {
-          delete localUpdates.worktreeVisibilityDefaults
-        }
-        const next = mergeSettings(getStoredSettings(), localUpdates, {
-          preserveAutoRenameBranchFromWorkUpdate: 'autoRenameBranchFromWork' in sanitizedUpdates
-        })
-        writeStoredSettings(next)
-        return settingsForActiveVisibilityOwner(
-          await syncRuntimeBackedSettings(sanitizedUpdates, next)
-        )
-      },
-      setActiveRuntimeEnvironmentPreference: async ({ environmentId }) => {
-        const requestedEnvironmentId = environmentId?.trim() || null
-        const activeRuntimeEnvironmentId = requestedEnvironmentId
-          ? resolveEnvironment(requestedEnvironmentId).id
-          : null
-        const next = mergeSettings(getStoredSettings(), {
-          activeRuntimeEnvironmentId
-        })
-        writeStoredSettings(next, activeRuntimeEnvironmentId)
-        return next
-      },
-      updatePRBotAuthorOverride: (args) => updateRuntimePRBotAuthorOverride(args),
-      listFonts: () => Promise.resolve([]),
-      onChanged: () => noopUnsubscribe
-    } satisfies Partial<WebSettingsApi> as unknown as WebSettingsApi,
-    agentAwake: {
-      getStatus: async () => {
-        const settings = getStoredSettings()
-        return {
-          mode: normalizeComputerAwakeMode(
-            settings.computerAwakeMode,
-            settings.keepComputerAwakeWhileAgentsRun
-          ),
-          active: false
-        }
-      },
-      onChanged: () => noopUnsubscribe
-    },
+    ...createWebAppApi(),
+    ...createWebStarNagApi(),
+    ...createWebPlatformApi(),
+    ...createWebWorkspacePortsApi(),
+    ...createWebOrcaProfilesApi(),
+    ...createWebE2EApi(),
+    ...createWebSettingsApi(),
     keybindings: createWebKeybindingsApi(),
     ui: createWebUiApi(),
-    crashReports: {
-      getLatestPending: () => Promise.resolve(null),
-      getLatestReport: () => Promise.resolve(null),
-      dismiss: () => Promise.resolve(null),
-      recordRendererError: () => Promise.resolve({ ok: true, report: null, deduped: true }),
-      recordBreadcrumb: () => {},
-      submit: () =>
-        Promise.resolve({
-          ok: false,
-          status: null,
-          error: translate('auto.web.web.preload.api.fb290366b2', 'Unavailable on web.')
-        }),
-      copyLatestDiagnostics: () =>
-        Promise.resolve({
-          ok: false,
-          error: translate('auto.web.web.preload.api.fb290366b2', 'Unavailable on web.')
-        }),
-      // Why: no Electron process on web; the caller falls back to performance.memory.
-      readHeapStatistics: () => null
-    },
-    diagnostics: {
-      getStatus: () =>
-        Promise.resolve({
-          localFileEnabled: false,
-          bundleEnabled: false,
-          traceFilePath: '',
-          traceFamilySize: 0
-        }),
-      collectBundle: () => Promise.reject(new Error('Review files are unavailable on web.')),
-      openBundlePreview: () => Promise.reject(new Error('Review files are unavailable on web.')),
-      discardBundlePreview: () => Promise.resolve(),
-      uploadBundle: () => Promise.reject(new Error('Sending diagnostics is unavailable on web.')),
-      deleteBundle: () => Promise.reject(new Error('Sent diagnostics are unavailable on web.'))
-    },
-    session: {
-      // Mirrors desktop bridge: non-local hosts persist under a host-suffixed key so their sessions stay isolated from local.
-      get: (hostId) => Promise.resolve(getStoredWorkspaceSession(hostId)),
-      set: async (session, hostId) => {
-        writeJson(sessionStorageKeyForHost(hostId), sanitizeWebRuntimeWorkspaceSession(session))
-      },
-      patch: async (patch: WorkspaceSessionPatch, hostId) => {
-        writeJson(
-          sessionStorageKeyForHost(hostId),
-          sanitizeWebRuntimeWorkspaceSession({
-            ...getStoredWorkspaceSession(hostId),
-            ...patch
-          })
-        )
-      },
-      // localStorage writes synchronously, so there is no deferred web flush.
-      flush: async () => {},
-      readTerminalScrollback: () => null,
-      setSync: (session, hostId) => {
-        writeJson(sessionStorageKeyForHost(hostId), sanitizeWebRuntimeWorkspaceSession(session))
-      }
-    },
-    onboarding: {
-      get: () => Promise.resolve(getStoredOnboarding()),
-      update: async (updates) => {
-        const current = getStoredOnboarding()
-        const next: OnboardingState = {
-          ...current,
-          ...updates,
-          flowVersion: ONBOARDING_FLOW_VERSION,
-          checklist: {
-            ...current.checklist,
-            ...updates.checklist
-          }
-        }
-        writeJson(ONBOARDING_STORAGE_KEY, next)
-        return next
-      }
-    },
-    cache: {
-      getGitHub: () =>
-        Promise.resolve(
-          readJson(GITHUB_CACHE_STORAGE_KEY, {
-            pr: {},
-            issue: {}
-          })
-        ),
-      setGitHub: async ({ cache }) => {
-        writeJson(GITHUB_CACHE_STORAGE_KEY, cache)
-      }
-    },
-    runtime: createRuntimeApi(),
-    nativeChat: createNativeChatApi(),
+    ...createWebDiagnosticsApi(),
+    ...createWebWorkspaceSessionApi(),
+    ...createWebOnboardingApi(),
+    ...createWebGithubCacheApi(),
+    runtime: createWebRuntimeApi(),
+    nativeChat: createWebNativeChatApi(),
     runtimeEnvironments: createRuntimeEnvironmentsApi(),
     repos: createReposApi(),
     worktrees: createWorktreesApi(),
@@ -900,7 +102,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     memory: {
       getSnapshot: () => Promise.resolve(createEmptyMemorySnapshot())
     },
-    aiVault: createAiVaultApi(),
+    aiVault: createWebAiVaultApi(),
     preflight: createPreflightApi(),
     notifications: createNotificationsApi(),
     rateLimits: createRateLimitsApi(),
@@ -911,8 +113,6 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     cli: createCliApi(),
     agentHooks: createAgentHooksApi(),
     macosTccPrompts: createMacosTccPromptsApi(),
-    // Why: the desktop derives this from the host filesystem, which the web
-    // client has no view of; reporting synced keeps the warning banner silent.
     codexConfigSync: {
       status: () =>
         Promise.resolve({ state: 'synced', reason: null, systemConfigPath: '' } as const)
@@ -934,46 +134,9 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     gitBash: {
       isAvailable: () => callRuntimeResult<boolean>('host.gitBash.isAvailable').catch(() => false)
     },
-    agentStatus: {
-      onSet: () => noopUnsubscribe,
-      onClear: () => noopUnsubscribe,
-      getSnapshot: () => Promise.resolve([]),
-      inferInterrupt: () => Promise.resolve(false),
-      inferQuestionAnswered: () => Promise.resolve(false),
-      onMigrationUnsupported: () => noopUnsubscribe,
-      onMigrationUnsupportedClear: () => noopUnsubscribe,
-      onLegacyWorkerTerminalRecovery: () => noopUnsubscribe,
-      getMigrationUnsupportedSnapshot: () => Promise.resolve([]),
-      drop: () => {},
-      reconcileEndedProcess: () => {},
-      dropByTabPrefix: () => {},
-      retirePaneAuthority: () => {},
-      restorePaneAuthority: () => {},
-      transferPaneAuthority: () => {}
-    },
-    mobile: {
-      listNetworkInterfaces: () => Promise.resolve({ interfaces: [] }),
-      getPairingQR: () => Promise.resolve({ available: false }),
-      getWindowsFirewallStatus: () => Promise.resolve({ supported: false }),
-      repairWindowsFirewall: () => Promise.resolve({ ok: false, reason: 'unsupported' }),
-      openWindowsNetworkSettings: () => Promise.resolve(false),
-      getRuntimePairingUrl: () => Promise.resolve({ available: false }),
-      listDevices: () => Promise.resolve({ devices: [] }),
-      revokeDevice: () => Promise.resolve({ revoked: false }),
-      listRuntimeAccessGrants: () => Promise.resolve({ grants: [] }),
-      revokeRuntimeAccess: () => Promise.resolve({ revoked: false }),
-      isWebSocketReady: () =>
-        Promise.resolve({ ready: Boolean(activeEnvironment), endpoint: null }),
-      getRelayStatus: () => Promise.resolve({ status: 'offline' as const }),
-      onRelayStatusChanged: () => noopUnsubscribe,
-      consumePendingUnpairedDeviceAuthFailure: () => Promise.resolve(false),
-      onUnpairedDeviceAuthFailure: () => noopUnsubscribe
-    },
-    telemetryTrack: () => Promise.resolve(),
-    telemetrySetOptIn: () => Promise.resolve(),
-    telemetryGetConsentState: () =>
-      Promise.resolve({ optedIn: false, source: 'default', blockedByEnv: false } as never),
-    telemetryAcknowledgeBanner: () => Promise.resolve()
+    ...createWebAgentStatusApi(),
+    ...createWebMobileApi(),
+    ...createWebTelemetryApi()
   }
 }
 

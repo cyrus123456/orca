@@ -1,4 +1,3 @@
-/* eslint-disable max-lines */
 import type { StateCreator } from 'zustand'
 import type { AppState } from '../types'
 import type { WorkspaceKey } from '../../../../shared/folder-workspace-types'
@@ -1058,22 +1057,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   workspaceSessionReady: false,
   restoredRuntimeHostIdByWorkspaceSessionKey: {},
   defaultTerminalTabsAppliedByWorktreeId: {},
-  markDefaultTerminalTabsApplied: (worktreeId) =>
-    set((s) => {
-      if (s.defaultTerminalTabsAppliedByWorktreeId[worktreeId]) {
-        return {}
-      }
-      return {
-        defaultTerminalTabsAppliedByWorktreeId: {
-          ...s.defaultTerminalTabsAppliedByWorktreeId,
-          [worktreeId]: true
-        }
-      }
-    }),
   hydrationSucceeded: false,
-  setHydrationSucceeded: (value) => {
-    set({ hydrationSucceeded: value })
-  },
   pendingReconnectWorktreeIds: [],
   pendingReconnectTabByWorktree: {},
   pendingReconnectPtyIdByTabId: {},
