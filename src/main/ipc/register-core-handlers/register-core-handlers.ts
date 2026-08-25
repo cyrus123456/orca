@@ -67,30 +67,30 @@ import { registerUpdaterHandlers } from '../window/attach-main-window-services'
 import {
   registerClipboardHandlers,
   setTrustedClipboardRendererWebContentsId
-} from '../window/clipboard-ipc-handlers'
-import { isDashboardPopoutRenderer } from '../window/dashboard-popout-window'
-import type { ClaudeUsageStore } from '../claude-usage/store'
-import type { CodexUsageStore } from '../codex-usage/store'
-import type { OpenCodeUsageStore } from '../opencode-usage/store'
-import type { RateLimitService } from '../rate-limits/service'
-import type { CodexAccountService } from '../codex-accounts/service'
-import type { ClaudeAccountService } from '../claude-accounts/service'
-import type { AutomationService } from '../automations/service'
-import type { AgentAwakeService } from '../agent-awake-service'
-import type { CrashReportStore } from '../crash-reporting/crash-report-store'
-import type { KeybindingService } from '../keybindings/keybinding-service'
+} from '../../window/clipboard-ipc-handlers'
+import { isDashboardPopoutRenderer } from '../../window/dashboard-popout-window'
+import type { ClaudeUsageStore } from '../../claude-usage/store'
+import type { CodexUsageStore } from '../../codex-usage/store'
+import type { OpenCodeUsageStore } from '../../opencode-usage/store'
+import type { RateLimitService } from '../../rate-limits/service'
+import type { CodexAccountService } from '../../codex-accounts/service'
+import type { ClaudeAccountService } from '../../claude-accounts/service'
+import type { AutomationService } from '../../automations/service'
+import type { AgentAwakeService } from '../../agent-awake-service'
+import type { CrashReportStore } from '../../crash-reporting/crash-report-store'
+import type { KeybindingService } from '../../keybindings/keybinding-service'
 import type {
   AiVaultPrepareSessionResumeArgs,
   AiVaultPrepareSessionResumeResult
-} from '../../shared/ai-vault-resume-preparation'
+} from '../../../shared/ai-vault-resume-preparation'
 import {
   getSavedRuntimeAiVaultHostInfos,
   prepareRuntimeAiVaultSessionResume,
   resolveRuntimeAiVaultSessionTitles,
   scanRuntimeAiVaultSessions
-} from '../ai-vault/runtime-session-scanner'
-import type { PluginService } from '../plugins/plugin-service'
-import type { PluginMarketplaceHandlerServices } from './plugin-marketplaces'
+} from '../../ai-vault/runtime-session-scanner'
+import type { PluginService } from '../../plugins/plugin-service'
+import type { PluginMarketplaceHandlerServices } from '../plugin-marketplaces'
 
 let registered = false
 
@@ -177,6 +177,7 @@ export function registerCoreHandlers(
   registerComputerUsePermissionHandlers()
   registerSettingsHandlers(store, agentAwakeService)
   registerSkillsHandlers(store, runtime)
+  registerSkillDeleteIpcHandlers(store, runtime)
   if (automations) {
     registerAutomationHandlers(store, automations)
   }
