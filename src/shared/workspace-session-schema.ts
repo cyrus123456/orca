@@ -20,6 +20,9 @@ import {
   browserPageSchema,
   browserWorkspaceSchema
 } from './workspace-session-browser-schema'
+import { clientHostedBrowserCloseIntentSchema } from './client-hosted-browser-close-intent'
+import { persistedClientHostedBrowserPageSchema } from './client-hosted-browser-page-record'
+import { persistedOpenFileSchema } from './workspace-session-editor-schema'
 import { sleepingAgentSessionsByPaneKeySchema } from './workspace-session-sleeping-agents'
 import {
   tabGroupLayoutNodeSchema,
@@ -143,6 +146,14 @@ export const workspaceSessionStateSchema: z.ZodType<WorkspaceSessionState> = z.o
   activeBrowserTabIdByWorktree: salvagedOptional(
     'activeBrowserTabIdByWorktree',
     salvagingRecord(worktreeIdSchema, z.string().nullable())
+  ),
+  clientHostedBrowserPagesByWorktree: salvagedOptional(
+    'clientHostedBrowserPagesByWorktree',
+    salvagingRecord(worktreeIdSchema, salvagingArray(persistedClientHostedBrowserPageSchema))
+  ),
+  clientHostedBrowserCloseIntentsByEnvironment: salvagedOptional(
+    'clientHostedBrowserCloseIntentsByEnvironment',
+    salvagingRecord(z.string().min(1), salvagingArray(clientHostedBrowserCloseIntentSchema))
   ),
   activeTabTypeByWorktree: salvagedOptional(
     'activeTabTypeByWorktree',
