@@ -13870,6 +13870,7 @@
           "backToList": "すべての自動化",
           "tableName": "名前",
           "tableProject": "プロジェクト",
+          "tableHost": "ホスト",
           "tableStatus": "ステータス",
           "tableActions": "操作",
           "newAutomation": "新しい自動化",
