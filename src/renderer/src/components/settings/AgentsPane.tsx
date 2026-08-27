@@ -19,9 +19,13 @@ import type { CustomAgent, GlobalSettings, TuiAgent } from '../../../../shared/t
 import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { useDetectedAgents, type AgentDetectionTarget } from '@/hooks/useDetectedAgents'
 import { useAppStore } from '@/store'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { AgentAwakeSetting } from './AgentAwakeSetting'
 import { AgentCacheTimerSection } from './AgentCacheTimerSection'
 import { AgentRuntimeSetting } from './AgentRuntimeSetting'
+import { DefaultAgentPill } from './AgentDefaultSetting'
 import { buildCodexSessionSourceHomeControl } from './codex-session-source-home-control'
 import {
   getAgentGeneratedTabTitlesDescription,
@@ -29,6 +33,7 @@ import {
 } from './agent-generated-tab-title-copy'
 import { getAgentStatusHooksDescription, getAgentStatusHooksTitle } from './agent-status-hooks-copy'
 import {
+  SettingsBadge,
   SettingsSegmentedControl,
   SettingsSubsectionHeader,
   SettingsSwitchRow
@@ -177,6 +182,7 @@ export function AgentsPane({
     refresh: refreshTargetAgents
   } = useDetectedAgents(agentDetectionTarget)
   const refreshLocalAgents = useAppStore((state) => state.refreshDetectedAgents)
+  const handleRefresh = (): void => void refreshTargetAgents()
   const activeServerName = useAppStore((state) =>
     activeServerEnvironmentId
       ? (state.runtimeEnvironments.find(
@@ -311,6 +317,45 @@ export function AgentsPane({
       ? [...enabledDetectedAgents, storedDefaultAgent]
       : enabledDetectedAgents
 
+  const getRowProps = (
+    agent: (typeof catalog)[number],
+    isDetected: boolean
+  ): AgentCatalogRowProps => ({
+    agentId: agent.id,
+    label: agent.label,
+    homepageUrl: agent.homepageUrl,
+    defaultCmd: agent.cmd,
+    defaultArgs: getTuiAgentDefaultArgs(agent.id),
+    defaultEnv: getTuiAgentDefaultEnv(agent.id),
+    isDetected,
+    isEnabled: isTuiAgentEnabled(agent.id, disabledAgents),
+    isDefault: isDetected && defaultAgent === agent.id,
+    cmdOverride: isDetected ? cmdOverrides[agent.id] : undefined,
+    argsOverride: resolveTuiAgentLaunchArgs(agent.id, agentDefaultArgs),
+    envOverride: resolveTuiAgentLaunchEnv(agent.id, agentDefaultEnv),
+    onSetDefault: isDetected ? () => updateSettings({ defaultTuiAgent: agent.id }) : () => {},
+    onSetEnabled: (enabled) => setAgentEnabled(agent.id, enabled),
+    onSaveOverride: isDetected
+      ? (value) => {
+          const next = { ...cmdOverrides }
+          if (value) {
+            next[agent.id] = value
+          } else {
+            delete next[agent.id]
+          }
+          updateSettings({ agentCmdOverrides: next })
+        }
+      : () => {},
+    onSaveArgs: (value) =>
+      updateSettings({ agentDefaultArgs: { ...agentDefaultArgs, [agent.id]: value } }),
+    onSaveEnv: (value) =>
+      updateSettings({ agentDefaultEnv: { ...agentDefaultEnv, [agent.id]: value } }),
+    sessionSourceHome:
+      isDetected && agent.id === 'codex'
+        ? buildCodexSessionSourceHomeControl(settings, updateSettings)
+        : undefined
+  })
+
   return (
     <div className="space-y-8">
       <section className="space-y-4">
@@ -342,6 +387,7 @@ export function AgentsPane({
             // Why: a custom default overrides TuiAgent selection, so a TuiAgent
             // pill is only active when no custom default is set.
             const isActive = defaultCustomAgentId === null && defaultAgent === agent.id
+            const isUndetected = detectedIds !== null && !detectedIds.has(agent.id)
             return (
               <DefaultAgentPill
                 key={agent.id}
@@ -406,7 +452,7 @@ export function AgentsPane({
       ) : null}
       <AgentCacheTimerSection settings={settings} updateSettings={updateSettings} />
 
-      <AgentPermissionsSetting mode={agentPermissionMode} onChange={saveAgentPermissionMode} />
+      <AgentPermissionsSetting mode={resolveAgentPermissionModeSummary({ agentDefaultArgs, agentDefaultEnv })} onChange={saveAgentPermissionMode} />
 
       <CustomAgentsSection
         customAgents={customAgents}
@@ -414,159 +460,17 @@ export function AgentsPane({
         onDelete={deleteCustomAgent}
       />
 
-      {detectedAgents.length > 0 && (
-        <section className="space-y-3">
-          <SettingsSubsectionHeader
-            title={
-              <span className="flex items-center gap-2">
-                {translate('auto.components.settings.AgentsPane.02e0143be5', 'Installed')}
-                <SettingsBadge tone="accent">
-                  {detectedAgents.length}{' '}
-                  {translate('auto.components.settings.AgentsPane.ed3e110e61', 'detected')}
-                </SettingsBadge>
-                {activeServerName ? (
-                  <SettingsBadge tone="muted">
-                    {translate('auto.components.settings.AgentsPane.03e1a5081a', 'on {{value0}}', {
-                      value0: activeServerName
-                    })}
-                  </SettingsBadge>
-                ) : null}
-              </span>
-            }
-            action={
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                title={
-                  activeServerEnvironmentId
-                    ? translate(
-                        'auto.components.settings.AgentsPane.25a41a9aad',
-                        'Re-detect agents installed on the active server'
-                      )
-                    : translate(
-                        'auto.components.settings.AgentsPane.13647f9f80',
-                        'Re-read your shell PATH and re-detect installed agents'
-                      )
-                }
-                className="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-              >
-                <RefreshCw className={cn('size-3', isRefreshing && 'animate-spin')} />
-                {isRefreshing
-                  ? translate('auto.components.settings.AgentsPane.c9b33eb5c0', 'Refreshing…')
-                  : translate('auto.components.settings.AgentsPane.0d9e293a02', 'Refresh')}
-              </Button>
-            }
-          />
-
-          <div className="divide-y divide-border/40">
-            {detectedAgents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agentId={agent.id}
-                label={agent.label}
-                homepageUrl={agent.homepageUrl}
-                defaultCmd={agent.cmd}
-                defaultArgs={getTuiAgentDefaultArgs(agent.id)}
-                defaultEnv={getTuiAgentDefaultEnv(agent.id)}
-                isDetected
-                isEnabled={isTuiAgentEnabled(agent.id, disabledAgents)}
-                isDefault={defaultAgent === agent.id}
-                cmdOverride={cmdOverrides[agent.id]}
-                argsOverride={resolveTuiAgentLaunchArgs(agent.id, agentDefaultArgs)}
-                envOverride={resolveTuiAgentLaunchEnv(agent.id, agentDefaultEnv)}
-                onSetDefault={() => setDefault(agent.id)}
-                onSetEnabled={(enabled) => setAgentEnabled(agent.id, enabled)}
-                onSaveOverride={(v) => saveOverride(agent.id, v)}
-                onSaveArgs={(v) => saveAgentArgs(agent.id, v)}
-                onSaveEnv={(v) => saveAgentEnv(agent.id, v)}
-                sessionSourceHome={
-                  agent.id === 'codex'
-                    ? buildCodexSessionSourceHomeControl(settings, updateSettings)
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {undetectedAgents.length > 0 && (
-        <section className="space-y-3">
-          <SettingsSubsectionHeader
-            title={
-              <span className="flex items-center gap-2 text-muted-foreground">
-                {translate(
-                  'auto.components.settings.AgentsPane.e8da2af684',
-                  'Available to install'
-                )}
-                <SettingsBadge tone="muted">
-                  {undetectedAgents.length}{' '}
-                  {translate('auto.components.settings.AgentsPane.024bd95089', 'agents')}
-                </SettingsBadge>
-              </span>
-            }
-          />
-
-          <div className="divide-y divide-border/40">
-            {undetectedAgents.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                agentId={agent.id}
-                label={agent.label}
-                homepageUrl={agent.homepageUrl}
-                defaultCmd={agent.cmd}
-                defaultArgs={getTuiAgentDefaultArgs(agent.id)}
-                defaultEnv={getTuiAgentDefaultEnv(agent.id)}
-                isDetected={false}
-                isEnabled={isTuiAgentEnabled(agent.id, disabledAgents)}
-                isDefault={false}
-                cmdOverride={undefined}
-                argsOverride={resolveTuiAgentLaunchArgs(agent.id, agentDefaultArgs)}
-                envOverride={resolveTuiAgentLaunchEnv(agent.id, agentDefaultEnv)}
-                onSetDefault={() => {}}
-                onSetEnabled={(enabled) => setAgentEnabled(agent.id, enabled)}
-                onSaveOverride={() => {}}
-                onSaveArgs={(v) => saveAgentArgs(agent.id, v)}
-                onSaveEnv={(v) => saveAgentEnv(agent.id, v)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {detectedIds === null && !detectionFailed && (
-        <div className="flex items-center justify-center rounded-md border border-dashed border-border/50 py-6 text-sm text-muted-foreground">
-          {translate(
-            'auto.components.settings.AgentsPane.d83834f5e6',
-            'Detecting installed agents…'
-          )}
-        </div>
-      )}
-
-      {detectionFailed && (
-        <div className="flex items-start justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <span className="flex min-w-0 items-start gap-2">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            {translate(
-              'auto.components.settings.AgentsPane.remoteDetectionFailed',
-              'Couldn’t detect installed agents. Check the host connection and try again.'
-            )}
-          </span>
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            onClick={handleRefresh}
-            className="h-6 shrink-0 gap-1.5 px-2 text-destructive hover:text-destructive"
-          >
-            <RefreshCw className="size-3" />
-            {translate('auto.components.settings.AgentsPane.retryDetection', 'Retry')}
-          </Button>
-        </div>
-      )}
+      <AgentDetectionCatalog
+        detectedAgents={detectedAgents}
+        undetectedAgents={undetectedAgents}
+        detectionPending={detectedIds === null}
+        detectionFailed={detectionFailed}
+        isRefreshing={isRefreshing}
+        activeServerEnvironmentId={activeServerEnvironmentId}
+        activeServerName={activeServerName}
+        onRefresh={handleRefresh}
+        getRowProps={getRowProps}
+      />
     </div>
   )
 }

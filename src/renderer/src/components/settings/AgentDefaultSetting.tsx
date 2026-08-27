@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import { SettingsSubsectionHeader } from './SettingsFormControls'
 
-function DefaultAgentPill({
+export function DefaultAgentPill({
   active,
   onClick,
   children,

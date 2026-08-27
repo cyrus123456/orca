@@ -16,7 +16,6 @@ import type {
   SetupAgentStartupPolicy,
   OrcaHooks,
   SparsePreset,
-  TuiAgent,
   CustomAgent
 } from '../../../shared/types'
 import SparseCheckoutPresetSelect from '@/components/sparse/SparseCheckoutPresetSelect'
@@ -31,7 +30,6 @@ import {
   AddRemoteHostDialog,
   type AddRemoteHostMode
 } from '@/components/sidebar/AddRemoteHostDialog'
-import { SetProjectLocationDialog } from '@/components/new-workspace/SetProjectLocationDialog'
 import { unwrapRuntimeRpcResult } from '@/runtime/runtime-rpc-client'
 import { withUiConnectTimeout } from '@/ssh/ssh-connect-ui-timeout'
 import { isSshConnectInFlight, trackSshConnect } from '@/ssh/ssh-connect-in-flight'
@@ -51,17 +49,13 @@ import {
   EMPTY_EPHEMERAL_VM_RECIPES,
   EMPTY_PROJECT_HOST_SETUP_OPTIONS,
   EMPTY_PROJECT_OPTIONS,
-  type NeedsProjectHostOption,
-  type NewWorkspaceComposerCardProps
+  type NeedsProjectHostOption
 } from './new-workspace/new-workspace-composer-card-props'
 import { getSshStatusLabel } from './new-workspace/new-workspace-composer-ssh-status'
 import { useComposerFileDragOver } from './new-workspace/use-composer-file-drag-over'
 
 type RepoOption = React.ComponentProps<typeof RepoCombobox>['repos'][number]
 type EphemeralVmRecipeOption = NonNullable<OrcaHooks['environmentRecipes']>[number]
-const EMPTY_PROJECT_OPTIONS: NewWorkspaceProjectOption[] = []
-const EMPTY_PROJECT_HOST_SETUP_OPTIONS: ProjectHostSetupOption[] = []
-const EMPTY_EPHEMERAL_VM_RECIPES: EphemeralVmRecipeOption[] = []
 
 type NewWorkspaceComposerCardProps = {
   contextualTourSource?: string
@@ -198,10 +192,6 @@ const SSH_STATUS_LABELS: Partial<Record<SshConnectionStatus, string>> = {
   }
 }
 
-function getSshStatusLabel(status: SshConnectionStatus): string {
-  return SSH_STATUS_LABELS[status] ?? status
-}
-
 function SetupCommandPreview({ setupConfig }: { setupConfig: SetupConfig }): React.JSX.Element {
   // Why: just the script in a quiet monochrome card — the source label (orca.yaml / local) and
   // the run-setup toggle live in the section header above, so the card carries no chrome of its
@@ -214,69 +204,6 @@ function SetupCommandPreview({ setupConfig }: { setupConfig: SetupConfig }): Rea
       </pre>
     </div>
   )
-}
-
-function useComposerFileDragOver(): {
-  isFileDragOver: boolean
-  dragHandlers: {
-    onDragEnter: (event: React.DragEvent<HTMLDivElement>) => void
-    onDragLeave: (event: React.DragEvent<HTMLDivElement>) => void
-  }
-} {
-  const [isFileDragOver, setIsFileDragOver] = React.useState(false)
-  const dragCounterRef = React.useRef(0)
-
-  const reset = React.useCallback(() => {
-    dragCounterRef.current = 0
-    setIsFileDragOver(false)
-  }, [])
-
-  const onDragEnter = React.useCallback((event: React.DragEvent<HTMLDivElement>): void => {
-    // Why: "Files" is the DataTransfer type the OS adds for native drags; skip internal drags so they route to their own handlers.
-    if (!event.dataTransfer.types.includes('Files')) {
-      return
-    }
-    if (event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME)) {
-      return
-    }
-    dragCounterRef.current += 1
-    setIsFileDragOver(true)
-  }, [])
-
-  const onDragLeave = React.useCallback(
-    (event: React.DragEvent<HTMLDivElement>): void => {
-      if (!event.dataTransfer.types.includes('Files')) {
-        return
-      }
-      // Why: mirror the onDragEnter guard so internal drags don't decrement a counter enter skipped incrementing (else it goes negative).
-      if (event.dataTransfer.types.includes(WORKSPACE_FILE_PATH_MIME)) {
-        return
-      }
-      dragCounterRef.current -= 1
-      if (dragCounterRef.current <= 0) {
-        reset()
-      }
-    },
-    [reset]
-  )
-
-  // Why: preload stops native drop events before React's onDrop, so reset the drag highlight via a document capture listener.
-  React.useEffect(() => {
-    const handler = (): void => {
-      reset()
-    }
-    document.addEventListener('drop', handler, true)
-    document.addEventListener('dragend', handler, true)
-    return () => {
-      document.removeEventListener('drop', handler, true)
-      document.removeEventListener('dragend', handler, true)
-    }
-  }, [reset])
-
-  return {
-    isFileDragOver,
-    dragHandlers: { onDragEnter, onDragLeave }
-  }
 }
 
 export default function NewWorkspaceComposerCard({
@@ -368,26 +295,6 @@ export default function NewWorkspaceComposerCard({
 }: NewWorkspaceComposerCardProps): React.JSX.Element {
   // Why: subscribe (form uses translate() directly) so an open create dialog repaints when the UI language changes.
   useTranslation()
-  const {
-    contextualTourSource,
-    containerClassName,
-    composerRef,
-    onComposerNodeChange,
-    nameInputRef,
-    eligibleRepos,
-    repoId,
-    selectedRepoIsGit,
-    onProjectHostSetupChange,
-    selectedRepoSshStatus,
-    setupConfig,
-    setupControlsEnabled = true,
-    selectedProjectId = null,
-    onAddProjectOverride,
-    onNestedDialogOpenChange
-  } = props
-  const projectOptions = props.projectOptions ?? EMPTY_PROJECT_OPTIONS
-  const projectHostSetupOptions = props.projectHostSetupOptions ?? EMPTY_PROJECT_HOST_SETUP_OPTIONS
-  const ephemeralVmRecipes = props.ephemeralVmRecipes ?? EMPTY_EPHEMERAL_VM_RECIPES
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
   const openModal = useAppStore((state) => state.openModal)
   const activeModal = useAppStore((state) => state.activeModal)
