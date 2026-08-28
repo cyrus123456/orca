@@ -73,15 +73,6 @@ const terminalLayoutSnapshotSchema = z.object({
 
 // ─── Workspace session ──────────────────────────────────────────────
 
-const terminalSurfaceTombstoneSchema = z.object({
-  worktreeId: z.string(),
-  parentTabId: terminalTabIdSchema,
-  leafId: z.string(),
-  ptyId: z.string(),
-  incarnationId: z.string().min(1).max(128),
-  retiredAt: z.number().finite().nonnegative()
-})
-
 const worktreeIdSchema = z.string()
 
 export const workspaceSessionStateSchema: z.ZodType<WorkspaceSessionState> = z.object({
@@ -197,6 +188,10 @@ export const workspaceSessionStateSchema: z.ZodType<WorkspaceSessionState> = z.o
   terminalSurfaceTombstonesByPaneKey: salvagedOptional(
     'terminalSurfaceTombstonesByPaneKey',
     salvagingRecord(z.string(), terminalSurfaceTombstoneSchema)
+  ),
+  closedTerminalTabTombstonesByTabId: salvagedOptional(
+    'closedTerminalTabTombstonesByTabId',
+    salvagingRecord(terminalTabIdSchema, closedTerminalTabTombstoneSchema)
   )
 })
 
