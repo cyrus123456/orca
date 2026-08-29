@@ -1055,6 +1055,10 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   nativeChatLaunchDraftByTabId: {},
   tabBarOrderByWorktree: {},
   workspaceSessionReady: false,
+  terminalStartupRestorationReady: false,
+  setTerminalStartupRestorationReady: (value) => {
+    set({ terminalStartupRestorationReady: value })
+  },
   restoredRuntimeHostIdByWorkspaceSessionKey: {},
   defaultTerminalTabsAppliedByWorktreeId: {},
   closedTerminalTabTombstonesByTabId: {},
