@@ -4252,6 +4252,7 @@ const api = {
         direction: 'horizontal' | 'vertical'
         command?: string
         telemetrySource?: TerminalPaneSplitSource
+        newLeafId?: string
       }) => void
     ): (() => void) => {
       const listener = (
@@ -4262,6 +4263,7 @@ const api = {
           direction: 'horizontal' | 'vertical'
           command?: string
           telemetrySource?: TerminalPaneSplitSource
+          newLeafId?: string
         }
       ) => callback(data)
       ipcRenderer.on('ui:splitTerminal', listener)
