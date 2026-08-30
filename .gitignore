@@ -42,6 +42,7 @@ package-lock.json
 .vscode/
 .workbuddy/
 .idea/
+.omo/
 .serena/
 *.swp
 *.swo

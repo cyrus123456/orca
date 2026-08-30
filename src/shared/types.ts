@@ -38,6 +38,7 @@ import type { CodexResetCreditAttemptLedger } from './codex-reset-credit-attempt
 import type { TaskSourceContext } from './task-source-context'
 import type { SetupRunnerShell } from './setup-runner-command'
 import type { AiVaultSessionTitle } from './ai-vault-session-title'
+import type { ClosedTerminalTabTombstonesByTabId } from './closed-terminal-tab-tombstones'
 
 // Re-exported for backward compat with renderer call sites that import
 // `WorkspaceCreateTelemetrySource` from '../../../shared/types'.
@@ -1256,6 +1257,9 @@ export type WorkspaceSessionState = {
       retiredAt: number
     }
   >
+  /** Terminal tabs this client watched the user close, kept until the host's own snapshot stops
+   *  listing them. See shared/closed-terminal-tab-tombstones.ts for why absence alone cannot say it. */
+  closedTerminalTabTombstonesByTabId?: ClosedTerminalTabTombstonesByTabId
 }
 
 export type WorkspaceSessionPatch = Partial<WorkspaceSessionState>

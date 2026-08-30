@@ -34,6 +34,8 @@ import {
   workspaceVisibleTabTypeSchema
 } from './workspace-session-tabs-schema'
 import { salvagedField, salvagedOptional, salvagingArray, salvagingRecord } from './zod-salvage'
+import { terminalSurfaceTombstoneSchema } from './terminal-surface-tombstone-schema'
+import { closedTerminalTabTombstoneSchema } from './closed-terminal-tab-tombstones'
 
 // ─── Terminal pane layout (recursive) ───────────────────────────────
 
