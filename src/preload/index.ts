@@ -197,6 +197,8 @@ import type {
   RuntimeTerminalPresentation
 } from '../shared/runtime-types'
 import type { RuntimeRpcResponse } from '../shared/runtime-rpc-envelope'
+import type { RemoteRuntimeSharedConnectionDiagnostics } from '../shared/remote-runtime-shared-control-types'
+import { RUNTIME_ENVIRONMENT_DIAGNOSTICS_CHANNEL } from '../shared/runtime-environment-diagnostics'
 import type { PublicKnownRuntimeEnvironment } from '../shared/runtime-environments'
 import type { RemoteWorkspaceChangedEvent } from '../shared/remote-workspace-types'
 import type {
@@ -4229,6 +4231,8 @@ const api = {
         paneRuntimeId: number
         direction: 'horizontal' | 'vertical'
         command?: string
+        worktreeId?: string
+        sourceLeafId?: string
         telemetrySource?: TerminalPaneSplitSource
         newLeafId?: string
       }) => void
@@ -4240,6 +4244,8 @@ const api = {
           paneRuntimeId: number
           direction: 'horizontal' | 'vertical'
           command?: string
+          worktreeId?: string
+          sourceLeafId?: string
           telemetrySource?: TerminalPaneSplitSource
           newLeafId?: string
         }
@@ -4783,6 +4789,24 @@ const api = {
       ipcRenderer.invoke('runtimeEnvironments:getStatus', args),
     retryControlConnection: (args: { selector: string }): Promise<void> =>
       ipcRenderer.invoke('runtimeEnvironments:retryControlConnection', args),
+    onSharedControlDiagnostics: (
+      callback: (event: {
+        environmentId: string
+        transportGeneration: number
+        diagnostics: RemoteRuntimeSharedConnectionDiagnostics
+      }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          environmentId: string
+          transportGeneration: number
+          diagnostics: RemoteRuntimeSharedConnectionDiagnostics
+        }
+      ): void => callback(data)
+      ipcRenderer.on(RUNTIME_ENVIRONMENT_DIAGNOSTICS_CHANNEL, listener)
+      return () => ipcRenderer.removeListener(RUNTIME_ENVIRONMENT_DIAGNOSTICS_CHANNEL, listener)
+    },
     prepareBrowserClientHostPlacement: (args) =>
       ipcRenderer.invoke('runtimeEnvironments:prepareBrowserClientHostPlacement', args),
     retryConnectionsNow: (): Promise<void> =>
@@ -4984,7 +5008,7 @@ const api = {
       callback: (data: {
         requestId: string
         targetId: string
-        kind: 'passphrase' | 'password'
+        kind: 'passphrase' | 'password' | 'keyboard-interactive'
         detail: string
       }) => void
     ): (() => void) => {
@@ -4993,7 +5017,7 @@ const api = {
         data: {
           requestId: string
           targetId: string
-          kind: 'passphrase' | 'password'
+          kind: 'passphrase' | 'password' | 'keyboard-interactive'
           detail: string
         }
       ) => callback(data)
