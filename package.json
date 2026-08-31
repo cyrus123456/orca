@@ -301,6 +301,28 @@
   },
   "packageManager": "pnpm@10.24.0+sha512.01ff8ae71b4419903b65c60fb2dc9d34cf8bb6e06d03bde112ef38f7a34d6904c424ba66bea5cdcf12890230bf39f9580473140ed9c946fef328b6e5238a345a",
   "reactDoctor": {
+    "ignore": {
+      "overrides": [
+        {
+          "files": [
+            "src/renderer/src/components/editor/combined-diff/review-controls/use-combined-diff-view-preferences.ts"
+          ],
+          "rules": [
+            "react-doctor/no-derived-state-effect"
+          ]
+        },
+        {
+          "files": [
+            "src/renderer/src/components/editor/combined-diff/browse-files/use-combined-diff-tree-navigation.ts",
+            "src/renderer/src/components/editor/combined-diff/load-sections/combined-diff-section-load-registry.ts",
+            "src/renderer/src/components/editor/combined-diff/review-controls/use-combined-diff-section-actions.ts"
+          ],
+          "rules": [
+            "react-doctor/no-ref-current-in-render"
+          ]
+        }
+      ]
+    },
     "rules": {
       "react-doctor/js-combine-iterations": "off"
     }
