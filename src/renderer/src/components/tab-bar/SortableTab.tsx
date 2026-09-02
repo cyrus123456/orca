@@ -17,6 +17,10 @@ import {
   type DropIndicator
 } from './drop-indicator'
 import { preventMiddleButtonDefault } from './middle-button-default-guard'
+import {
+  RENAME_TERMINAL_TAB_EVENT,
+  type RenameTerminalTabDetail
+} from './terminal-tab-rename-request'
 import { SortableTabContextMenu } from './SortableTabContextMenu'
 import { translate } from '@/i18n/i18n'
 import { TAB_CONTAINER_WIDTH_CLASSES, TAB_LABEL_WIDTH_CLASSES } from './tab-width-rules'
@@ -98,8 +102,6 @@ export default function SortableTab({
       terminalLayout: s.terminalLayoutsByTabId?.[tab.id]
     })
   )
-  const renamingTabId = useAppStore((s) => s.renamingTabId)
-  const setRenamingTabId = useAppStore((s) => s.setRenamingTabId)
 
   // Why: shellOverride is stamped at create time, so changing the default shell later won't repaint existing tabs.
   const shellForIcon = tab.shellOverride

@@ -10,17 +10,17 @@ import {
 } from '../shared/agent-process-recognition'
 import { getFirstCommandToken } from '../shared/command-token-scanner'
 import {
-  getProcessTableIndex,
+  getFreshProcessTableSnapshot,
   getProcessTableSnapshot,
   type ProcessTableIndex,
   type ProcessTableRow
 } from '../shared/process-table-snapshot'
+import { getProcessTableIndex } from '../shared/process-table-index'
 import { selectForegroundProcessCandidate } from '../shared/foreground-process-selection'
 import {
   resolveOuterWrapperForegroundProcess,
   shouldInspectOuterWrapperForegroundProcess
 } from '../shared/foreground-wrapper-agent'
-import { isShellProcess } from '../shared/shell-process-detection'
 import {
   resolveWindowsAgentForegroundProcess,
   shouldInspectWindowsAgentForeground
@@ -171,15 +171,37 @@ export async function resolveProcessCwd(pid: number, fallbackCwd: string): Promi
 }
 
 /**
- * Check whether a process has child processes (via pgrep).
+ * Check whether a process has child processes.
+ *
+ * Why the shared snapshot and not `pgrep -P`: this answers one field of
+ * `pty.inspectProcess`, which every tracked pane polls on a 750ms/2000ms
+ * cadence, and the fork was neither cached nor coalesced. procps-ng opens six
+ * procfs files per process to resolve a ppid — including a `/proc/<pid>/ctty`
+ * that never exists on Linux — so one call cost O(host process count) syscalls,
+ * ~4k opens per pgrep on a 690-process host, at up to 8 forks/sec (#13537).
+ * `getForegroundProcessName` in the same RPC already captured the TTL-cached
+ * `ps` table, whose index carries the parent/child map, so the answer is free.
+ *
+ * `fresh` opts out of that TTL. A poll can read a 500ms-old table because its
+ * next tick corrects it, but a close or cleanup decision acts on the answer
+ * once and destructively — a child that started inside the TTL would be killed
+ * with no confirmation. `pgrep` scanned per call, so anything that decides
+ * has to keep scanning per call.
  */
-export async function processHasChildren(pid: number): Promise<boolean> {
+export async function processHasChildren(
+  pid: number,
+  options?: { fresh?: boolean }
+): Promise<boolean> {
+  // Windows has no `ps`; the previous `pgrep` fork always failed here too, so
+  // this keeps the same answer without spawning anything to reach it.
+  if (process.platform === 'win32') {
+    return false
+  }
   try {
-    const { stdout } = await execFile('pgrep', ['-P', String(pid)], {
-      encoding: 'utf-8',
-      timeout: 3000
-    })
-    return stdout.trim().length > 0
+    const rows = options?.fresh
+      ? await getFreshProcessTableSnapshot()
+      : await getProcessTableSnapshot()
+    return (getProcessTableIndex(rows).childrenByPpid.get(pid)?.length ?? 0) > 0
   } catch {
     return false
   }
@@ -305,10 +327,11 @@ export async function getForegroundProcessName(
         (await resolveWindowsAgentForegroundProcess(pid, fallbackProcess, {})) ?? fallbackProcess
       )
     }
-    if (!isShellProcess(fallbackProcess) && !isAgentForegroundWrapperProcess(fallbackProcess)) {
-      return fallbackProcess
-    }
   }
+  // Why: an unrecognized name is not proof of a non-agent foreground -- macOS p_comm truncates
+  // to the executable basename, which for the native Claude install is its version directory
+  // (`2.1.258`). The TTL-cached table read resolves the real command line; a foreground that
+  // is genuinely not an agent still answers with its own name below.
   const recognized = await getRecognizedForegroundDescendant(pid, fallbackProcess)
   if (recognized) {
     return recognized
