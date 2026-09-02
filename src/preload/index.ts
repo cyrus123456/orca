@@ -4894,6 +4894,5 @@ if (process.contextIsolated) {
   }
 } else {
   window.electron = electronAPI
-  // @ts-expect-error (define in dts)
   window.api = api
 }
