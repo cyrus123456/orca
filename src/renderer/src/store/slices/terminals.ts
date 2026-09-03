@@ -1070,6 +1070,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   pendingReconnectPtyIdByTabId: {},
   lastKnownRelayPtyIdByTabId: {},
   unverifiedPtyLossTabIds: {},
+  disownedPtyIds: {},
   pendingSnapshotByPtyId: {},
   pendingColdRestoreByPtyId: {},
   deferredSshReconnectTargets: [],
