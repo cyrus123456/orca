@@ -348,6 +348,9 @@ export default function NewWorkspaceComposerCard({
   const [setLocationOption, setSetLocationOption] = React.useState<NeedsProjectHostOption | null>(
     null
   )
+  // Why sticky: the dialog animates itself closed off its own `option` prop, so unmounting it
+  // when the option clears would cut that animation short.
+  const [setLocationDialogMounted, setSetLocationDialogMounted] = React.useState(false)
 
   const selectedRepo = eligibleRepos.find((candidate) => candidate.id === repoId)
   const selectedRepoName = selectedRepo?.displayName ?? selectedRepo?.path ?? 'This project'
@@ -361,6 +364,16 @@ export default function NewWorkspaceComposerCard({
   const needsSetupProjectHostSetupOptions = projectHostSetupOptions.filter(
     (option) => option.kind === 'needs-setup'
   )
+  // Warm on the precursor: the "Set location" row only renders for a needs-setup host that can
+  // still take one, so the chunk resolves while the picker is being read rather than on the click.
+  const hasSetLocationOption = needsSetupProjectHostSetupOptions.some(
+    (option) => option.canSetLocation
+  )
+  React.useEffect(() => {
+    if (hasSetLocationOption) {
+      void loadSetProjectLocationDialog().catch(() => {})
+    }
+  }, [hasSetLocationOption])
   const shouldShowRunTargetPicker =
     readyProjectHostSetupOptions.length > 0 ||
     ephemeralVmRecipes.length > 0 ||
@@ -442,6 +455,7 @@ export default function NewWorkspaceComposerCard({
   }, [onAddProjectOverride, openModal])
   const handleSetLocation = React.useCallback(
     (option: NeedsProjectHostOption): void => {
+      setSetLocationDialogMounted(true)
       setSetLocationOption(option)
       onNestedDialogOpenChange?.(true)
     },
@@ -1143,14 +1157,18 @@ export default function NewWorkspaceComposerCard({
           the in-progress workspace form is preserved; on success the new host flows back into
           the run-target picker via the store. */}
       <AddRemoteHostDialog mode={addRemoteHostMode} onOpenChange={setAddRemoteHostMode} />
-      <SetProjectLocationDialog
-        option={setLocationOption}
-        projectName={selectedProjectName}
-        projectKind={selectedRepoIsGit ? 'git' : 'folder'}
-        defaultCloneUrl={defaultCloneUrl}
-        onClose={handleSetLocationClose}
-        onReady={handleSetLocationReady}
-      />
+      {setLocationDialogMounted ? (
+        <React.Suspense fallback={null}>
+          <SetProjectLocationDialog
+            option={setLocationOption}
+            projectName={selectedProjectName}
+            projectKind={selectedRepoIsGit ? 'git' : 'folder'}
+            defaultCloneUrl={defaultCloneUrl}
+            onClose={handleSetLocationClose}
+            onReady={handleSetLocationReady}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   )
 }
