@@ -6232,6 +6232,11 @@
           "projectOnly": "Added in this project only.",
           "useGlobalFor": "Use global for {{value0}}",
           "useGlobal": "Use global"
+        },
+        "RepoScanUnavailableIndicator": {
+          "title": "Worktree scan failed for {{value0}}",
+          "retry": "Retry scan",
+          "retained": "Existing worktrees are kept until a scan succeeds. Click to retry."
         }
       },
       "shared": {
@@ -13796,7 +13801,9 @@
           "useLan": "Use LAN",
           "retrying": "Retrying…",
           "retry": "Retry Relay",
-          "copyDiagnostics": "Copy diagnostics"
+          "copyDiagnostics": "Copy diagnostics",
+          "reconnectTitle": "Your Orca account session expired.",
+          "reconnectBody": "Sign in again to use Orca Relay, or use LAN to pair over Tailscale or the same Wi‑Fi."
         }
       },
       "gitlab": {
