@@ -14,6 +14,26 @@ const NATIVE_IME_HARNESS =
 
 export const PR_E2E_SOURCE_ROUTES = [
   {
+    id: 'ssh.localhost-agent-hooks',
+    specs: ['tests/e2e/ssh-localhost.spec.ts'],
+    matches: (file) =>
+      isProductSource(file) &&
+      /^src\/(?:relay\/(?:agent-hook|relay-agent-hook-runtime|plugin-overlay)|main\/(?:agent-hooks\/|ssh\/ssh-relay-session\.ts$)|shared\/agent-hook)/.test(
+        file
+      )
+  },
+  {
+    id: 'browser-network.ssh-docker-route',
+    specs: ['tests/e2e/ssh-browser-network-execution-route.docker.unit.test.ts'],
+    matches: (file) =>
+      file === 'tests/e2e/ssh-browser-network-execution-route.docker.unit.test.ts' ||
+      /^tests\/e2e\/helpers\/docker-ssh-relay-(?:image|target)\.ts$/.test(file) ||
+      (isProductSource(file) &&
+        /^src\/main\/(?:browser\/(?:ssh-browser-network-execution-route|browser-network-deferred-socket|browser-network-execution-route|system-ssh-socks-client-socket)|ssh\/system-ssh-dynamic-forward-process)\.ts$/.test(
+          file
+        ))
+  },
+  {
     id: 'terminal.windows-wsl-launch-and-paste',
     specs: [
       'tests/e2e/golden-tab-bar-agent-launch.spec.ts',
