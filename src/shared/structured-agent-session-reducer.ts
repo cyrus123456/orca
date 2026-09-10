@@ -3,13 +3,14 @@ import type {
   AgentJournalRenderItem,
   AgentJournalSubmission
 } from './agent-session-journal-types'
-import type {
-  AgentSessionBackgroundTaskState,
-  AgentSessionSlashCommand,
-  AgentSessionHandoffStatus,
-  AgentSessionHistoryPage,
-  AgentSessionSubscribeEvent,
-  AgentSessionTurnActivity
+import {
+  agentSessionBackgroundTasksEqual,
+  type AgentSessionBackgroundTaskState,
+  type AgentSessionSlashCommand,
+  type AgentSessionHandoffStatus,
+  type AgentSessionHistoryPage,
+  type AgentSessionSubscribeEvent,
+  type AgentSessionTurnActivity
 } from './agent-session-wire'
 
 export type StructuredAgentSessionState = {
@@ -35,7 +36,7 @@ export type StructuredAgentSessionAction =
   | { type: 'handoff'; handoff: AgentSessionHandoffStatus }
   | { type: 'event'; event: AgentSessionSubscribeEvent }
   | { type: 'tail-page'; page: AgentSessionHistoryPage }
-  | { type: 'older-page'; requestedEpoch: string; page: AgentSessionHistoryPage }
+  | { type: 'older-page'; requestedCursor: AgentJournalCursor; page: AgentSessionHistoryPage }
 
 const MAX_RETAINED_SUBMISSIONS = 256
 // Well above the renderer's initial read window (300) plus a page, so only genuinely
@@ -70,17 +71,9 @@ function backgroundTaskStatesEqual(
   ) {
     return false
   }
-  if (left.tasks === right.tasks) {
-    return true
-  }
-  if (!left.tasks || !right.tasks || left.tasks.length !== right.tasks.length) {
-    return false
-  }
-  return left.tasks.every(
-    (task, index) =>
-      task.id === right.tasks?.[index]?.id &&
-      task.kind === right.tasks[index]?.kind &&
-      task.description === right.tasks[index]?.description
+  return (
+    agentSessionBackgroundTasksEqual(left.tasks, right.tasks) &&
+    agentSessionBackgroundTasksEqual(left.settledTasks, right.settledTasks)
   )
 }
 
@@ -214,7 +207,15 @@ export function reduceStructuredAgentSession(
     }
   }
   if (action.type === 'older-page') {
-    if (state.epoch !== action.requestedEpoch || action.page.epoch !== action.requestedEpoch) {
+    const requested = action.requestedCursor
+    if (state.epoch !== requested.epoch || action.page.epoch !== requested.epoch) {
+      return state
+    }
+    const head = state.items[0]
+    // A live batch head-trimmed past the anchor while this read was in flight, so the
+    // page no longer abuts the retained window; merging it would leave a silent hole.
+    // The caller re-anchors on the new head and asks again.
+    if (head && head.sequence > requested.sequence) {
       return state
     }
     const paged = mergeItems(state.items, action.page.items, action.page.removedItemIds)
