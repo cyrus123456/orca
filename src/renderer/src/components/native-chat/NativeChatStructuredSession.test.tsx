@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import React, { forwardRef, useImperativeHandle } from 'react'
+import React, { forwardRef, useImperativeHandle, useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentJournalRenderItem } from '../../../../shared/agent-session-journal-types'
 import type { AgentSessionBackgroundTask } from '../../../../shared/agent-session-wire'
@@ -144,13 +144,18 @@ vi.mock('./NativeChatMessageList', () => ({
 vi.mock('./NativeChatComposer', () => ({
   NativeChatComposer: forwardRef((props: typeof mocks.composerProps, ref) => {
     mocks.composerProps = props
+    const fieldRef = useRef<HTMLTextAreaElement>(null)
     useImperativeHandle(ref, () => ({
-      focus: () => true,
+      // Real DOM focus: the reveal-focus loop retries until focus lands in the pane.
+      focus: () => {
+        fieldRef.current?.focus()
+        return true
+      },
       insertTypedText: () => true,
       handlePasteEvent: mocks.handlePasteEvent,
       pasteFromClipboard: mocks.pasteFromClipboard
     }))
-    return <textarea data-testid="structured-composer" />
+    return <textarea ref={fieldRef} data-testid="structured-composer" />
   })
 }))
 vi.mock('./NativeChatEmptyState', () => ({ NativeChatEmptyState: () => null }))
@@ -192,6 +197,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-paste"
         sessionId="session-paste"
         target={{ kind: 'local' }}
@@ -210,6 +216,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-1"
         sessionId="session-1"
         target={{ kind: 'environment', environmentId: 'env-1' }}
@@ -231,6 +238,7 @@ describe('NativeChatStructuredSession', () => {
       render(
         <NativeChatStructuredSession
           isVisible
+          isFocusedGroup
           tabId="structured-tab-parity"
           sessionId="session-parity"
           target={{ kind: 'local' }}
@@ -243,10 +251,13 @@ describe('NativeChatStructuredSession', () => {
     }
   )
 
-  // Every background-task test mounts the same local Claude session; only the ids differ.
+  // Every background-task test mounts the same local Claude session; only the ids
+  // differ. A fresh element per call also matters for the rerenders below: React
+  // bails out of re-rendering an identical one.
   const claudeSessionView = (tabId: string, sessionId: string) => (
     <NativeChatStructuredSession
       isVisible
+      isFocusedGroup
       tabId={tabId}
       sessionId={sessionId}
       target={{ kind: 'local' }}
@@ -254,7 +265,7 @@ describe('NativeChatStructuredSession', () => {
     />
   )
 
-  it('places background monitoring above the usable composer and stops without an active turn', async () => {
+  it('places background monitoring above the usable composer, keeps its list open across a gap in live work, and stops without an active turn', async () => {
     mocks.monitoringBackgroundTasks = true
     mocks.supportsBackgroundTaskStop = true
     mocks.backgroundTasks = [
@@ -263,7 +274,9 @@ describe('NativeChatStructuredSession', () => {
     ]
     mocks.stopBackgroundTask.mockResolvedValue({ cancelled: true })
 
-    render(claudeSessionView('structured-tab-background', 'session-background'))
+    const { rerender } = render(
+      claudeSessionView('structured-tab-background', 'session-background')
+    )
 
     const disclosure = screen.getByRole('button', { name: '1 agent · 1 shell' })
     const status = disclosure.closest('[data-native-chat-background-tasks="true"]')
@@ -288,6 +301,17 @@ describe('NativeChatStructuredSession', () => {
     await waitFor(() =>
       expect(mocks.stopBackgroundTask).toHaveBeenCalledWith('session-background', 'task-command')
     )
+
+    // The strip is mounted on live work, and settled rows are flushed the instant
+    // the last live one ends, so a sequential fan-out unmounts it between one
+    // subagent finishing and the next starting. The disclosure is not the
+    // strip's to forget in that gap.
+    mocks.monitoringBackgroundTasks = false
+    rerender(claudeSessionView('structured-tab-background', 'session-background'))
+    expect(document.querySelector('[data-native-chat-background-tasks="true"]')).toBeNull()
+    mocks.monitoringBackgroundTasks = true
+    rerender(claudeSessionView('structured-tab-background', 'session-background'))
+    expect(screen.getByRole('list', { name: 'Agents' })).toBeTruthy()
   })
 
   it('keeps the strip mounted through a running turn, with the turn owning the voice', () => {
@@ -373,6 +397,8 @@ describe('NativeChatStructuredSession', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop Shared task' }))
 
     rerender(claudeSessionView('structured-tab-stale-background', 'session-current'))
+    // The disclosure is keyed by session, so a new session opens collapsed.
+    fireEvent.click(screen.getByRole('button', { name: '1 shell command — working' }))
     const currentStop = screen.getByRole('button', { name: 'Stop Shared task' })
     expect((currentStop as HTMLButtonElement).disabled).toBe(false)
     fireEvent.click(currentStop)
@@ -406,6 +432,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-1"
         sessionId="session-1"
         target={{ kind: 'local' }}
@@ -441,6 +468,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-1"
         sessionId="session-1"
         target={{ kind: 'local' }}
@@ -472,6 +500,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-wedge"
         sessionId="session-wedge"
         target={{ kind: 'local' }}
@@ -503,6 +532,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-probe-flag"
         sessionId="session-probe-flag"
         target={{ kind: 'local' }}
@@ -535,6 +565,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-parked"
         sessionId="session-parked"
         target={{ kind: 'local' }}
@@ -584,6 +615,7 @@ describe('NativeChatStructuredSession', () => {
     const makeView = (): React.ReactElement => (
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-churn"
         sessionId="session-churn"
         target={{ kind: 'local' }}
@@ -637,6 +669,7 @@ describe('NativeChatStructuredSession', () => {
     ) => (
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-target-switch"
         sessionId="session-target-switch"
         target={target}
@@ -671,6 +704,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-forced"
         sessionId="session-forced"
         target={{ kind: 'local' }}
@@ -709,6 +743,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-pending"
         sessionId="session-pending"
         target={{ kind: 'local' }}
@@ -738,6 +773,7 @@ describe('NativeChatStructuredSession', () => {
       render(
         <NativeChatStructuredSession
           isVisible
+          isFocusedGroup
           tabId="structured-tab-budget"
           sessionId="session-budget"
           target={{ kind: 'local' }}
@@ -808,6 +844,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-questions"
         sessionId="session-questions"
         target={{ kind: 'local' }}
@@ -866,6 +903,7 @@ describe('NativeChatStructuredSession', () => {
     render(
       <NativeChatStructuredSession
         isVisible
+        isFocusedGroup
         tabId="structured-tab-legacy-question"
         sessionId="session-legacy-question"
         target={{ kind: 'local' }}
