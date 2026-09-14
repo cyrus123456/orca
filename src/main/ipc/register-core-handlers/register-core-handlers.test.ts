@@ -140,7 +140,8 @@ const {
 
 vi.mock('electron', () => ({
   app: {
-    getPath: getPathMock
+    getPath: getPathMock,
+    once: vi.fn()
   }
 }))
 
