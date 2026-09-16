@@ -103,6 +103,17 @@ Project-owned type declarations belong in `.ts` files. `.d.ts` is reserved for a
 - `react/jsx-curly-brace-presence`: no unnecessary braces in props/children
 - Max lines: 300 (.ts), 400 (.tsx), 600 (.mjs), 800 (test files)
 
+# Writing Pull Requests
+
+Fill in [`.github/pull_request_template.md`](./.github/pull_request_template.md), written for a reviewer who has never seen this code:
+
+- No jargon — plain language, no internal shorthand.
+- The before and after as the user experiences it.
+- The mechanism you changed, not just the symptom.
+- Why this approach over the alternatives you considered.
+
+Cover all four concisely. Don't pad or walk the diff.
+
 # Considerations
 
 ## Worktree Safety
