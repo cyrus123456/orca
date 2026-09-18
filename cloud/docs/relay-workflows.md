@@ -385,6 +385,19 @@ director; the workflow never receives or mints a director or stamped-cell runtim
 keeps only the selected cell migration-only, while the exact rollback digest remains dispatchable via
 the same workflow's `rollback` mode.
 
+A roll holds the whole startup script identical before and after except the image, so a
+template stale enough to predate a pinned line fails closed rather than absorbing the drift.
+The one exception is the capacity identity: a cell that predates it gains it on its next roll,
+and the plan validator pins the exact reviewed identity instead of comparing that line, so a
+roll can never drop or rewrite it. Any other stale line still fails closed and needs a
+convergence apply first.
+
+A drained cell is refused before a roll, because draining means something is already
+shedding its connections. A migration-only cell has none to shed, so the flag decides nothing
+there and is accepted on entry; the replacement VM is still required not to be draining, and
+the incarnation check still proves it was replaced. That also unwedges the state a failed
+canary leaves behind, where the wave's own drain set the flag and no restart followed.
+
 C17 and C18 hold no hosts and are not general, so rolling one displaces nobody: they are the
 zero-displacement canary for a new image. Their wave enters and leaves migration-only, so its
 isolate and its restore are both no-ops and the selector generation does not move; a general
@@ -392,6 +405,44 @@ cell's wave still advances it by two. One wave may not mix the two classes, beca
 after the first offsets from a single per-wave delta. Neither cell is a declared regional-rehome
 source, so its template carries no rehome trust lines and it may roll only at rehome protocol `0`;
 the job refuses a trusted protocol for it before it plans anything.
+
+### Recovering a wave that died after its drain
+
+A cell's drain flag is a one-way latch on the running process. Only a restart clears it, and
+the failsafe that isolates a failed cell does not restart anything. So a wave that stopped
+any time after its drain step leaves the cell migration-only and draining, and it stays that
+way until the cell is rolled.
+
+Read the failed run before dispatching anything. If its log has a
+`"event":"relay_production_capacity_canary","mode":"drain"` line for the cell, the cell is
+drained. Then read the cell's live runtime image from
+`POST https://<hostname>.relay.onorca.dev/v1/admin/runtime-status`.
+
+1. **Do not re-dispatch `apply`.** It requires the cell general and not draining, and a
+   drained cell is neither. It will fail closed at the predecessor check.
+2. **Dispatch `rollback`,** with the same `target-image-digest` and `rollback-image-digest`
+   the failed wave used, the live selector generation, and the live tri-state membership
+   with the failed cell listed under migration-only. The confirmation is
+   `ROLL_BACK_RELAY_SAME_CAP <rollback-digest> <cell-id>`.
+3. The job classifies the cell itself and needs no extra input:
+   - serving the **rollback** image and draining, it is `stranded`. The wave stopped before
+     or during its template apply. The job re-isolates, re-drains, applies the reviewed
+     template, and rolls the MIG explicitly if that template was already in place. The cell
+     comes back on a new instance, so the drain clears, and it is restored to its entry class.
+   - serving the **target** image, it is `roll`, the ordinary rollback. The template applied
+     and the instance was replaced.
+   - serving the **rollback** image and not draining, it is `resume`: a rollback that failed
+     after its own template apply. Nothing is applied and nothing restarts.
+4. Rollback takes exactly one cell per dispatch. Recover the cells one at a time.
+5. If the run died inside `wait-until stable`, the MIG is still rolling on its own. Wait for
+   it to settle and re-read the runtime before dispatching, or the stage will be read off a
+   state that is about to change.
+6. A `stranded` dispatch that fails at plan review means the template already carries the
+   target image while the old instance is still up. Wait for the MIG to finish replacing it,
+   then dispatch again; it will classify as `roll`.
+
+A mutating dispatch still needs a fresh aggregate monitor dry-run unless the break-glass
+override below is used.
 
 ### Gate override (break-glass)
 
