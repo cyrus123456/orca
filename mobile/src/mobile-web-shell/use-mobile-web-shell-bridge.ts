@@ -5,9 +5,11 @@ import type {
 } from '../../modules/orca-mobile-web-shell/src'
 import { useHostClient } from '../transport/client-context'
 import { createBridgeDiagnosticReporter } from './bridge-diagnostic-log'
+import type { BridgeInitRoute } from './bridge/bridge-envelope'
 import { createBridgeHost, type BridgeHost } from './bridge-host'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
+import type { PageHostSnapshot } from './use-page-host-snapshot'
 
 class BridgeViewGoneError extends Error {
   constructor() {
@@ -53,10 +55,28 @@ export type MobileWebShellBridgeView = {
 export function useMobileWebShellBridge(args: {
   hostId: string
   session: MobileWebShellSessionState
+  /** The screen the page is standing in for, which the document's own `/` cannot tell it. */
+  route: BridgeInitRoute
+  /** The route patterns the page keeps for itself; everything else comes back as `navigate`. */
+  pageRoutes: readonly string[]
+  /** Opens a screen the page does not render, over the still-mounted view. */
+  onNavigate: (href: string) => void
+  /**
+   * This host and its stored keys, or null while they are being read. No host is built without
+   * them: `init` is answered once per `ready` and carries both, so a host that started without
+   * them would have to be torn down to carry them, and the page would have mounted its list
+   * against a host it could not name.
+   */
+  snapshot: PageHostSnapshot | null
+  /** The allowlisted keys as the app holds them, asked for on each `init` rather than at mount. */
+  readStorage: () => Readonly<Record<string, string>>
+  onStorageWrite: (key: string, value: string | null) => void
   /** The page could not render the generation on screen. Reported, never recovered from here. */
   onPageFault: (error: BridgeErrorCapture) => void
   /** The page asked for a session. Reported so the screen can stop waiting for it. */
   onPageReady: () => void
+  /** This shell named a screen the protocol does not allow, so no session is served. */
+  onRouteRefused: (issue: string) => void
 }): MobileWebShellBridgeView {
   const { client } = useHostClient(args.hostId)
   const ready = args.session.kind === 'ready' ? args.session : null
@@ -64,32 +84,70 @@ export function useMobileWebShellBridge(args: {
   const buildId = ready?.buildId ?? null
   const viewRef = useRef<MountedView | null>(null)
   const hostRef = useRef<MountedHost | null>(null)
-  // Read through a ref: the host is built once per session, and a caller's fresh closure every
-  // render must not tear one down and settle its pendings.
+  // Fixed for the life of one host: the page routes once, before its first render, so a route that
+  // changed afterwards would have nothing left to change. Held in a ref for that reason — an inline
+  // object in the deps would rebuild the host on every render and settle its pendings each time.
+  const routeRef = useRef(args.route)
+  const pageRoutesRef = useRef(args.pageRoutes)
+  // Read through a ref for the same reason: the host is built once per session, and a caller's
+  // fresh closure every render must not tear one down and settle its pendings.
+  const navigateRef = useRef(args.onNavigate)
+  const storageWriteRef = useRef(args.onStorageWrite)
+  const readStorageRef = useRef(args.readStorage)
   const pageFaultRef = useRef(args.onPageFault)
   const pageReadyRef = useRef(args.onPageReady)
-  // Commit-phase and declared above the host's effect, so the host is built against the callbacks
-  // this render passed: a native frame can land between a commit and a passive effect.
+  const routeRefusedRef = useRef(args.onRouteRefused)
+  // Commit-phase and declared above the host's effect, so the host is built against what this
+  // render passed: a native frame can land between a commit and a passive effect.
   useLayoutEffect(() => {
+    routeRef.current = args.route
+    pageRoutesRef.current = args.pageRoutes
+    navigateRef.current = args.onNavigate
+    storageWriteRef.current = args.onStorageWrite
+    readStorageRef.current = args.readStorage
     pageFaultRef.current = args.onPageFault
     pageReadyRef.current = args.onPageReady
-  }, [args.onPageFault, args.onPageReady])
+    routeRefusedRef.current = args.onRouteRefused
+  }, [
+    args.onNavigate,
+    args.onPageFault,
+    args.onPageReady,
+    args.onRouteRefused,
+    args.onStorageWrite,
+    args.readStorage,
+    args.pageRoutes,
+    args.route
+  ])
+  const snapshot = args.snapshot
 
   // Commit-phase, not passive: a native frame that arrives between the two carries the session id
   // the handler is fenced on, so only handing the host over here keeps it off the retired client.
   useLayoutEffect(() => {
-    if (client === null || sessionId === null || buildId === null) {
+    if (client === null || sessionId === null || buildId === null || snapshot === null) {
       return
     }
     const host = createBridgeHost({
       client,
       buildId,
       sessionId,
+      route: routeRef.current,
+      pageRoutes: pageRoutesRef.current,
       onPageFault: (error) => {
         pageFaultRef.current(error)
       },
       onPageReady: () => {
         pageReadyRef.current()
+      },
+      onRouteRefused: (issue) => {
+        routeRefusedRef.current(issue)
+      },
+      onNavigate: (href) => {
+        navigateRef.current(href)
+      },
+      host: snapshot.host,
+      readStorage: () => readStorageRef.current(),
+      onStorageWrite: (key, value) => {
+        storageWriteRef.current(key, value)
       },
       post: (json) => {
         const mounted = viewRef.current
@@ -104,7 +162,7 @@ export function useMobileWebShellBridge(args: {
       hostRef.current = null
       host.dispose()
     }
-  }, [buildId, client, sessionId])
+  }, [buildId, client, sessionId, snapshot])
 
   return {
     bridgeEnabled: ready !== null,

@@ -39,8 +39,23 @@ describe('the bridge diagnostic log', () => {
     const report = createBridgeDiagnosticReporter()
     report({ kind: 'frame-after-dispose' })
     report({ kind: 'notify-refused', name: 'fault', why: 'before-ready' })
+    report({ kind: 'route-refused', issue: 'the shell named no screen' })
     expect(lines()[0]).toContain('outlived')
     expect(lines()[1]).not.toContain('outlived')
+    expect(lines()[2]).not.toContain('outlived')
+  })
+
+  it('names the key a page was refused a write to', () => {
+    const report = createBridgeDiagnosticReporter()
+    report({ kind: 'storage-refused', key: 'orca:pins:another-host' })
+    expect(lines()[0]).toContain('orca:pins:another-host')
+    expect(lines()[0]).not.toContain('outlived')
+  })
+
+  it('carries what was wrong with the screen the shell named', () => {
+    const report = createBridgeDiagnosticReporter()
+    report({ kind: 'route-refused', issue: 'the shell named no screen' })
+    expect(lines()[0]).toContain('the shell named no screen')
   })
 
   it('carries the cause of the kinds that have one', () => {

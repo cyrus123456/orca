@@ -37,7 +37,19 @@ const DIRECTORY = '/caches/mobile-web/deadbeef/generations/a1b2'
  *  host's teardown land in the page that replaced it. */
 type PostedFrame = { sessionId: string; json: string }
 
-type Probe = { view: MobileWebShellBridgeView | null }
+type Probe = {
+  view: MobileWebShellBridgeView | null
+  navigations: string[]
+  storageWrites: { key: string; value: string | null }[]
+}
+
+/** What the page cannot read for itself, as the screen hands it over. */
+const SNAPSHOT = {
+  host: { id: 'host-1', name: 'Host One', endpoint: 'ws://host-1', lastConnected: 7 }
+}
+
+/** Read on every `init` rather than captured once, so this is a function here as it is there. */
+const STORAGE = { 'orca:pins:host-1': '["wt-1"]' }
 
 function fakeClient(): FakeRpcClient {
   const client = doubles.client
@@ -102,9 +114,17 @@ function Harness(props: {
   const view = useMobileWebShellBridge({
     hostId: 'host-1',
     session: props.session,
+    // Built inline on every render, as a caller writes it: the host is not rebuilt for it.
+    route: { pathname: '/h/host-1' },
+    pageRoutes: ['/h/[hostId]'],
+    onNavigate: (href) => props.probe.navigations.push(href),
+    snapshot: SNAPSHOT,
+    readStorage: () => STORAGE,
+    onStorageWrite: (key, value) => props.probe.storageWrites.push({ key, value }),
     // A fresh closure every render, which is the shape a screen passes and the one a ref must
     // absorb: rebuilding the host here would settle every pending request on each render.
     onPageFault: (error) => props.faults.push(error),
+    onRouteRefused: () => {},
     onPageReady: () => {
       props.readies.push(
         props.session.kind === 'ready' ? props.session.sessionId : props.session.kind
@@ -149,7 +169,7 @@ let warned: MockInstance<typeof console.warn>
 
 async function mount(session: MobileWebShellSessionState): Promise<Mounted> {
   const posted: PostedFrame[] = []
-  const probe: Probe = { view: null }
+  const probe: Probe = { view: null, navigations: [], storageWrites: [] }
   const faults: BridgeErrorCapture[] = []
   const readies: string[] = []
   const rendered: { tree: ReactTestRenderer | null } = { tree: null }
@@ -213,6 +233,38 @@ describe('the bridge channel', () => {
     expect(mounted.frames('session-one')).toEqual([
       expect.objectContaining({ type: 'init', sessionId: 'session-one', buildId: 'build-a' })
     ])
+  })
+
+  it('names the screen the page stands in for, so its document at `/` is not what it opens', async () => {
+    const mounted = await mount(readyState('session-one'))
+    await mounted.deliver(clientFrame({ type: 'ready' }))
+    expect(mounted.frames('session-one')).toEqual([
+      expect.objectContaining({
+        type: 'init',
+        route: { pathname: '/h/host-1' },
+        pageRoutes: ['/h/[hostId]'],
+        host: SNAPSHOT.host,
+        storage: STORAGE
+      })
+    ])
+  })
+
+  it('opens a screen the page hands back, through the caller that owns the stack', async () => {
+    const mounted = await mount(readyState('session-one'))
+    await mounted.deliver(clientFrame({ type: 'ready' }))
+    await mounted.deliver(
+      clientFrame({ type: 'notify', name: 'navigate', href: '/h/host-1/session/wt-1' })
+    )
+    expect(mounted.probe.navigations).toEqual(['/h/host-1/session/wt-1'])
+  })
+
+  it('does not rebuild the host for a route object the caller built again', async () => {
+    const mounted = await mount(readyState('session-one'))
+    await mounted.deliver(clientFrame({ type: 'request', id: ID, method: 'status.get' }))
+    // Same session, re-rendered: the harness passes a fresh `{ pathname }` every time. A rebuilt
+    // host would have settled that request delivery-unknown on its way out.
+    await mounted.update(readyState('session-one'))
+    expect(mounted.frames('session-one').filter((frame) => frame.type === 'error')).toEqual([])
   })
 
   it('hands a page fault to the screen and asks the client for nothing', async () => {
@@ -365,7 +417,7 @@ describe('the callbacks a render passes', () => {
     const first: BridgeErrorCapture[] = []
     const second: BridgeErrorCapture[] = []
     const posted: PostedFrame[] = []
-    const probe: Probe = { view: null }
+    const probe: Probe = { view: null, navigations: [], storageWrites: [] }
     // One session throughout, so the host is never rebuilt: only the ref refresh can carry the
     // second render's callback to a frame that arrives after it.
     const render = (faults: BridgeErrorCapture[]): ReactElement =>
@@ -418,7 +470,7 @@ describe('client changes', () => {
   it('hands the host over in the commit, so no frame reaches the replaced client', async () => {
     const first = fakeClient()
     const posted: PostedFrame[] = []
-    const probe: Probe = { view: null }
+    const probe: Probe = { view: null, navigations: [], storageWrites: [] }
     const render = (deliver: string | null): ReactElement =>
       createElement(DeliverDuringCommit, { deliver, posted, probe, faults: [], readies: [] })
     const rendered: { tree: ReactTestRenderer | null } = { tree: null }

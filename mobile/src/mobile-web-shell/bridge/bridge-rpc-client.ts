@@ -4,6 +4,7 @@ import type { ConnectionState, RpcResponse } from '../../transport/types'
 import { BRIDGE_MAX_PENDING_REQUESTS, BRIDGE_MAX_SUBSCRIPTIONS } from './bridge-caps'
 import { BridgeConnectionCache } from './bridge-client-connection-cache'
 import type { BridgeRpcClientDiagnostic } from './bridge-client-diagnostics'
+import { readShellSession, type BridgeShellSession } from './bridge-client-session'
 import { createBridgeInitHandshake } from './bridge-client-init-handshake'
 import {
   BridgeClientCapExceededError,
@@ -20,9 +21,10 @@ import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeClientMessage,
   type BridgeConnectionSnapshot,
-  type BridgeGrants,
   type BridgeHostMessage
 } from './bridge-envelope'
+
+export type { BridgeShellSession } from './bridge-client-session'
 
 export {
   BridgeClientCapExceededError,
@@ -38,13 +40,6 @@ const BRIDGE_ID_CHARS = 22
 
 export type { BridgeRpcClientDiagnostic } from './bridge-client-diagnostics'
 
-/** What `init` said this page is attached to. `grants` is what a call site checks before it posts. */
-export type BridgeShellSession = {
-  sessionId: string
-  buildId: string
-  grants: BridgeGrants
-}
-
 export type BridgeRpcClientOptions = {
   /** Posts one frame to the shell. May throw; nothing about returning proves delivery. */
   send: (json: string) => void
@@ -56,6 +51,14 @@ export type BridgeRpcClient = RpcClient & {
   /** Fires once `init` has landed, immediately if it already has. Mount no screen before it. */
   onReady: (listener: () => void) => () => void
   getShellSession: () => BridgeShellSession | null
+  /**
+   * Asks the shell to open a screen this page does not render. False when the shell granted no
+   * `navigate`, which is an older shell that would refuse the frame outright: the caller then has
+   * to do something else, and a thrown error in a tap handler is not that.
+   */
+  notifyNavigate: (href: string) => boolean
+  /** Writes one allowlisted key into the app's store. False when the shell granted no `storage`. */
+  notifyStorageWrite: (key: string, value: string | null) => boolean
   /**
    * Tells the shell this page cannot render what it was opened for. Never throws and never rejects:
    * the one caller is an error boundary, and a report that threw would be the second failure.
@@ -155,7 +158,7 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
       requests.closeAll(replaced)
       subscriptions.failAll(replaced.message)
     }
-    session = { sessionId: message.sessionId, buildId: message.buildId, grants: message.grants }
+    session = readShellSession(message)
     cache.prime(message.connection)
     for (const listener of readyListeners) {
       listener()
@@ -275,7 +278,7 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
     send: sendFrame,
     requireSession,
     isClosed: () => closed,
-    hasGrant: (grant) => session?.grants.native.includes(grant) ?? false
+    hasGrant: (name) => session?.grants.native.includes(name) === true
   })
 
   const unsubscribeFromMessages = options.onMessage(receive)
@@ -284,7 +287,7 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
   return {
     sendRequest,
     subscribe,
-    ...notifications,
+    updateTerminalSubscriptionViewport: notifications.updateTerminalSubscriptionViewport,
     getState: (): ConnectionState => snapshot().state,
     getReconnectAttempt: () => snapshot().reconnectAttempt,
     getLastConnectedAt: () => snapshot().lastConnectedAt,
@@ -296,6 +299,10 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
     // Not gated on the session: it registers a listener and reads nothing, so it cannot answer
     // wrongly, and a provider that subscribes before `init` is how a screen hears the first change.
     onStateChange: (listener) => cache.onStateChange(listener),
+    notifyForeground: notifications.notifyForeground,
+    notifyNavigate: notifications.notifyNavigate,
+    notifyStorageWrite: notifications.notifyStorageWrite,
+    notifyPageFault: notifications.notifyPageFault,
     close,
     onReady: (listener) => {
       if (session !== null) {
