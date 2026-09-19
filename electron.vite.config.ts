@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 import { createBootstrapFatalExitBanner } from './config/build-plugins/bootstrap-fatal-exit-banner'
+import { createPdfjsViewerAssetsPlugin } from './config/build-plugins/pdfjs-viewer-assets'
 import { createPlainNodeEntryGuardPlugin } from './config/build-plugins/plain-node-entry-guard'
 import packageJson from './package.json' with { type: 'json' }
 

@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
-import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { FakeRpcClient } from './bridge-host-test-fakes'
 import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
 
@@ -14,7 +14,12 @@ type ScreenDependencies = {
   storageRefreshes: number
   openUrl: Mock
   push: Mock
+  back: Mock
+  /** What the native stack answers: false is a page opened as the first screen on it. */
+  canGoBack: boolean
+  pathname: string
   pageRoutes: readonly string[]
+  routeGrants: readonly string[]
   lifecycle: string[]
   state: MobileWebShellSessionState
   /** Null for every case but the bridge's: with no client the hook builds no host at all. */
@@ -34,7 +39,11 @@ const dependencies = vi.hoisted((): ScreenDependencies => {
     storageRefreshes: 0,
     openUrl: vi.fn(),
     push: vi.fn(),
+    back: vi.fn(),
+    canGoBack: true,
+    pathname: '/h/host-1',
     pageRoutes: ['/h/[hostId]'],
+    routeGrants: ['navigate', 'storage', 'externalLink', 'native.clipboard.write'],
     lifecycle: [],
     state: { kind: 'checking' },
     client: null
@@ -50,12 +59,24 @@ vi.mock('react-native', () => ({
   Text: 'Text',
   View: 'View'
 }))
+// Reaching the real one imports the Expo runtime this test does not have. The screen only passes
+// the handler through; what it does with a verb is `native-clipboard.test.ts`.
+vi.mock('expo-clipboard', () => ({
+  setStringAsync: () => Promise.resolve(true),
+  getStringAsync: () => Promise.resolve('')
+}))
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ bottom: 8, left: 0, right: 0, top: 44 })
 }))
 vi.mock('expo-router', () => ({
   router: { replace: vi.fn() },
-  useRouter: () => ({ push: dependencies.push })
+  useRouter: () => ({
+    push: dependencies.push,
+    back: dependencies.back,
+    canGoBack: () => dependencies.canGoBack
+  }),
+  // Read by the pop latch, which clears on the route this shell is mounted at changing.
+  usePathname: () => dependencies.pathname
 }))
 // A component rather than a host string: the React key is what makes a retry a rebuilt WebView,
 // and a mount/unmount log is the only thing that can tell a remount from a prop update.
@@ -99,6 +120,7 @@ vi.mock('./use-mobile-web-shell-session', () => ({
   useMobileWebShellSession: () => ({
     state: dependencies.state,
     pageRoutes: dependencies.pageRoutes,
+    routeGrants: dependencies.routeGrants,
     retry: dependencies.retry,
     reportShellFailure: dependencies.reportShellFailure,
     reportDocumentLoaded: dependencies.reportDocumentLoaded,
@@ -107,7 +129,7 @@ vi.mock('./use-mobile-web-shell-session', () => ({
 }))
 
 import { clientFrame, createFakeRpcClient } from './bridge-host-test-fakes'
-import { BRIDGE_FAULT_GRANT } from './bridge/bridge-envelope'
+import { BRIDGE_FAULT_GRANT, BRIDGE_NAVIGATE_BACK_NOTIFY } from './bridge/bridge-envelope'
 import { MobileWebShellScreen } from './MobileWebShellScreen'
 
 /** The caller's native screen, as a component so `findAllByType` can name it without a host string. */
@@ -133,7 +155,20 @@ async function render(state: MobileWebShellSessionState): Promise<ReactTestRende
   if (rendered.tree === null) {
     throw new Error('screen did not render')
   }
+  mounted.push(rendered.tree)
   return rendered.tree
+}
+
+/** Unmounted between cases: the shell's stack latch is one per stack, so a screen left mounted is
+ *  a screen still holding whatever pop it took. */
+const mounted: ReactTestRenderer[] = []
+
+function unmountRenderedScreens(): void {
+  act(() => {
+    for (const tree of mounted.splice(0)) {
+      tree.unmount()
+    }
+  })
 }
 
 function readyState(sessionId: string): MobileWebShellSessionState {
@@ -172,6 +207,8 @@ function textOf(tree: ReactTestRenderer): string {
     .join('\n')
 }
 
+afterEach(unmountRenderedScreens)
+
 describe('the hybrid shell screen', () => {
   beforeEach(() => {
     dependencies.retry.mockReset()
@@ -182,6 +219,11 @@ describe('the hybrid shell screen', () => {
     dependencies.storageRefreshes = 0
     dependencies.lifecycle.length = 0
     dependencies.client = null
+    dependencies.back.mockReset()
+    dependencies.openUrl.mockReset()
+    dependencies.openUrl.mockImplementation(() => Promise.resolve(true))
+    dependencies.canGoBack = true
+    dependencies.pathname = '/h/host-1'
   })
 
   it('renders the update wall for a bundle verdict, with no shell view', async () => {
@@ -372,6 +414,75 @@ describe('the hybrid shell screen', () => {
     expect(
       textOf(await render({ kind: 'failed', reason: 'document-load-failed', retriedOnce: true }))
     ).toContain('The downloaded workspace could not be opened.')
+  })
+
+  it('reports a URL nothing on this phone could open, which is the dead tap that survives', async () => {
+    dependencies.client = createFakeRpcClient()
+    const failure = new Error('no activity found')
+    // A fresh rejection per call, not one built here: `mockReturnValue(Promise.reject(...))` builds
+    // it now and nothing attaches a handler until the frame arrives, which is an unhandled
+    // rejection in the window between.
+    dependencies.openUrl.mockImplementation(() => Promise.reject(failure))
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const tree = await render(readyState('session-one'))
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'ready' }) }
+      })
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: {
+          json: clientFrame({
+            type: 'notify',
+            name: 'externalLink',
+            url: 'mailto:someone@example.com'
+          })
+        }
+      })
+    })
+    // Nothing crosses back for a notify, so silence here is the one dead tap this verb does not
+    // rule out: the page was told the frame left and the phone opened nothing.
+    expect(warned.mock.calls).toContainEqual([
+      '[web-shell] could not open a URL for the page',
+      { url: 'mailto:someone@example.com', error: failure }
+    ])
+    warned.mockRestore()
+  })
+
+  it('pops its own stack when the page hands its back button over', async () => {
+    dependencies.client = createFakeRpcClient()
+    const tree = await render(readyState('session-one'))
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'ready' }) }
+      })
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'notify', name: BRIDGE_NAVIGATE_BACK_NOTIFY }) }
+      })
+    })
+    expect(dependencies.back).toHaveBeenCalledTimes(1)
+    expect(dependencies.push).not.toHaveBeenCalled()
+  })
+
+  it('pops nothing when this page is the first screen on the stack, rather than dismissing it', async () => {
+    dependencies.client = createFakeRpcClient()
+    dependencies.canGoBack = false
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const tree = await render(readyState('session-one'))
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'ready' }) }
+      })
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'notify', name: BRIDGE_NAVIGATE_BACK_NOTIFY }) }
+      })
+    })
+    expect(dependencies.back).not.toHaveBeenCalled()
+    // The page is told nothing either way, so the log is the only thing a dead Back button leaves.
+    expect(warned.mock.calls).toContainEqual([
+      '[web-shell-bridge] did not pop the stack for a page going back',
+      { why: 'nothing-to-pop' }
+    ])
+    warned.mockRestore()
   })
 
   it('shows a build id prefix and never the whole one, the cache path, or the host id', async () => {

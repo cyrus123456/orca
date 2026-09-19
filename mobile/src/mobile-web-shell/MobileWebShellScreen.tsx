@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
@@ -15,6 +15,8 @@ import type {
 } from './mobile-web-shell-session-contract'
 import { useMobileWebShellBridge } from './use-mobile-web-shell-bridge'
 import type { MobileWebShellRuntime } from './mobile-web-shell-runtime'
+import { serveNativeClipboardVerb } from '../platform/native-clipboard'
+import { useShellStackPop } from './use-shell-stack-pop'
 import { useMobileWebShellSession } from './use-mobile-web-shell-session'
 import { usePageHostSnapshot } from './use-page-host-snapshot'
 
@@ -138,14 +140,23 @@ export function MobileWebShellScreen({
 }: MobileWebShellScreenProps) {
   const insets = useSafeAreaInsets()
   const router = useRouter()
-  const { state, pageRoutes, retry, reportShellFailure, reportDocumentLoaded, reportPageReady } =
-    useMobileWebShellSession({ hostId, routePathname: route.pathname, runtime })
+  const popShellStack = useShellStackPop()
+  const {
+    state,
+    pageRoutes,
+    routeGrants,
+    retry,
+    reportShellFailure,
+    reportDocumentLoaded,
+    reportPageReady
+  } = useMobileWebShellSession({ hostId, routePathname: route.pathname, runtime })
   const { snapshot, unreadable, readStorage, refreshStorage, writeStorage } =
     usePageHostSnapshot(hostId)
   const bridge = useMobileWebShellBridge({
     hostId,
     route,
     pageRoutes,
+    routeGrants,
     session: state,
     snapshot,
     readStorage,
@@ -179,7 +190,22 @@ export function MobileWebShellScreen({
     // download and no second `init`.
     onNavigate: (href: string) => {
       router.push(href)
-    }
+    },
+    // Answered on this device and never forwarded; the host holds it to the verb table first.
+    serveNativeVerb: serveNativeClipboardVerb,
+    // Straight to the system handler. The envelope allowlisted the scheme before this ran, so the
+    // only failure left is a device with nothing registered for it — a `mailto:` on a phone with no
+    // mail account. Reported rather than swallowed: nothing crosses back for a notify, so this is
+    // the one dead tap the verb does not rule out, and silence is what would hide it. Still not
+    // rethrown, because this runs on the native frame handler.
+    onExternalLink: (url: string) => {
+      void Linking.openURL(url).catch((error: unknown) => {
+        console.warn('[web-shell] could not open a URL for the page', { url, error })
+      })
+    },
+    // The page's own Back goes nowhere: it holds the one history entry the entry wrote, so the only
+    // stack to pop is this one.
+    onNavigateBack: popShellStack
   })
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in

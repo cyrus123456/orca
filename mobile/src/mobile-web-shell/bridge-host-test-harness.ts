@@ -7,6 +7,13 @@ import {
   type FakeRpcClient
 } from './bridge-host-test-fakes'
 import { createBridgeHost, type BridgeHost, type BridgeHostDiagnostic } from './bridge-host'
+import type { BridgeNavigateBackOutcome } from './bridge-host-contract'
+import { MOBILE_WEB_SHELL_GRANTS } from './page-route-policy'
+import {
+  BRIDGE_NATIVE_VERBS,
+  clipboardWriteParamsSchema,
+  type BridgeNativeVerb
+} from './bridge/bridge-native-verbs'
 import {
   readBridgeHostMessage,
   type BridgeHostMessage,
@@ -23,6 +30,12 @@ export type Harness = {
   posted: string[]
   diagnostics: BridgeHostDiagnostic[]
   navigations: string[]
+  /** Every URL the page asked the shell to open outside the app, in order. */
+  externalLinks: string[]
+  /** Every text the page wrote to the pasteboard through a native verb, in order. */
+  clipboardWrites: string[]
+  /** One entry per `navigate-back` the host answered, in order, with what the shell did. */
+  backPops: BridgeNavigateBackOutcome[]
   storageWrites: { key: string; value: string | null }[]
   pageReadyCount: () => number
   routeRefusals: string[]
@@ -41,16 +54,34 @@ export function harness(
     post?: (json: string) => Promise<void>
     route?: BridgeInitRoute
     onNavigate?: (href: string) => void
+    onNavigateBack?: () => BridgeNavigateBackOutcome
     storage?: Readonly<Record<string, string>>
     /** For the suites that need the map to change between two `init` answers. */
     readStorage?: () => Readonly<Record<string, string>>
     onPageFault?: (error: BridgeErrorCapture) => void
+    /**
+     * Whether to answer a `ready` before the case runs, which is what a real page does first: the
+     * host serves no request until it has issued an `init`. Off by default so a case about the
+     * pre-ready refusals can still be written.
+     */
+    /** What the mounted route declared; everything this shell implements unless a case narrows it. */
+    routeGrants?: readonly string[]
+    /** Stands for a host rebuilt under a page whose session already handshook. */
+    sessionEstablished?: boolean
+    ready?: boolean
+    /** What the pasteboard answers a read with. */
+    clipboardText?: string
+    /** Replaces the whole verb handler, for the arm where a device call fails. */
+    serveNativeVerb?: (verb: BridgeNativeVerb, params: unknown) => Promise<unknown>
   } = {}
 ): Harness {
   const client = options.client ?? createFakeRpcClient()
   const posted: string[] = []
   const diagnostics: BridgeHostDiagnostic[] = []
   const navigations: string[] = []
+  const externalLinks: string[] = []
+  const clipboardWrites: string[] = []
+  const backPops: BridgeNavigateBackOutcome[] = []
   const storageWrites: { key: string; value: string | null }[] = []
   let pageReadies = 0
   const routeRefusals: string[] = []
@@ -65,6 +96,8 @@ export function harness(
     sessionId: 'session-a',
     route: options.route ?? ROUTE,
     pageRoutes: PAGE_ROUTES,
+    routeGrants: options.routeGrants ?? MOBILE_WEB_SHELL_GRANTS,
+    sessionEstablished: options.sessionEstablished ?? false,
     host: HOST,
     readStorage: options.readStorage ?? (() => options.storage ?? {}),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
@@ -73,12 +106,33 @@ export function harness(
     },
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
+    onExternalLink: (url) => externalLinks.push(url),
+    serveNativeVerb: (verb, params) => {
+      if (options.serveNativeVerb !== undefined) {
+        return options.serveNativeVerb(verb, params)
+      }
+      const read = BRIDGE_NATIVE_VERBS[verb].params.parse(params)
+      if (verb === 'native.clipboard.write') {
+        const { value } = clipboardWriteParamsSchema.parse(read)
+        clipboardWrites.push(value)
+        return Promise.resolve({ written: true })
+      }
+      return Promise.resolve({ value: options.clipboardText ?? '' })
+    },
+    onNavigateBack: () => {
+      const outcome = options.onNavigateBack?.() ?? 'popped'
+      backPops.push(outcome)
+      return outcome
+    },
     onPageFault: (error) => {
       pageFaults.push(error)
       options.onPageFault?.(error)
     },
     onDiagnostic: (diagnostic) => diagnostics.push(diagnostic)
   })
+  if (options.ready === true) {
+    host.receive(clientFrame({ type: 'ready' }))
+  }
   // Read back through the page's own reader: a frame the host sends that the page would refuse is
   // a frame that never arrives, and this is the only place both halves meet in one test.
   const frames = (): BridgeHostMessage[] =>
@@ -95,6 +149,9 @@ export function harness(
     posted,
     diagnostics,
     navigations,
+    externalLinks,
+    clipboardWrites,
+    backPops,
     storageWrites,
     pageReadyCount: () => pageReadies,
     routeRefusals,

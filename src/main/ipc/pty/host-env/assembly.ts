@@ -160,7 +160,13 @@ export function buildPtyHostEnv(
 
     if (shouldPrepareOmpShadow) {
       const ompEnv = piTitlebarExtensionService.buildPtyEnv(id, preexistingOmpAgentDir, 'omp', {
-        materializeDefaultHome: explicitPiAgentKind === 'omp'
+        materializeDefaultHome: explicitPiAgentKind === 'omp',
+        // WSL loads the host-rooted managed extension through drvfs; guest storage stays separate.
+        ...(opts.isWsl
+          ? { configDirName: '.omp' }
+          : baseEnv.PI_CONFIG_DIR !== undefined
+            ? { configDirName: baseEnv.PI_CONFIG_DIR }
+            : {})
       })
       Object.assign(baseEnv, ompEnv)
       exposePiManagedExtensionEnv(baseEnv, 'omp', ompEnv)
@@ -188,6 +194,9 @@ export function buildPtyHostEnv(
       overlay: 'ORCA_OMP_CODING_AGENT_DIR',
       source: 'ORCA_OMP_SOURCE_AGENT_DIR'
     })
+    if (shouldPrepareOmpShadow) {
+      Object.assign(baseEnv, piTitlebarExtensionService.buildFreshOmpEnv())
+    }
     delete baseEnv.ORCA_OMP_STATUS_EXTENSION
     delete baseEnv.ORCA_PRIME_AGENT_SOURCE_AGENT_DIR
     delete baseEnv.ORCA_PRIME_AGENT_STATUS_EXTENSION

@@ -7,6 +7,8 @@ import { useHostClient } from '../transport/client-context'
 import { createBridgeDiagnosticReporter } from './bridge-diagnostic-log'
 import type { BridgeInitRoute } from './bridge/bridge-envelope'
 import { createBridgeHost, type BridgeHost } from './bridge-host'
+import type { BridgeNavigateBackOutcome } from './bridge-host-contract'
+import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
 import type { PageHostSnapshot } from './use-page-host-snapshot'
@@ -59,8 +61,16 @@ export function useMobileWebShellBridge(args: {
   route: BridgeInitRoute
   /** The route patterns the page keeps for itself; everything else comes back as `navigate`. */
   pageRoutes: readonly string[]
+  /** What this route declared, which is what `init` grants and what every grant check reads. */
+  routeGrants: readonly string[]
   /** Opens a screen the page does not render, over the still-mounted view. */
   onNavigate: (href: string) => void
+  /** Opens a URL outside the app, on the page's behalf. */
+  onExternalLink: (url: string) => void
+  /** Serves one `native.` verb on this device, for a page that was granted it. */
+  serveNativeVerb: (verb: BridgeNativeVerb, params: unknown) => Promise<unknown>
+  /** Pops the stack this page was pushed onto, and says so when it did not. */
+  onNavigateBack: () => BridgeNavigateBackOutcome
   /**
    * This host and its stored keys, or null while they are being read. No host is built without
    * them: `init` is answered once per `ready` and carries both, so a host that started without
@@ -89,9 +99,15 @@ export function useMobileWebShellBridge(args: {
   // object in the deps would rebuild the host on every render and settle its pendings each time.
   const routeRef = useRef(args.route)
   const pageRoutesRef = useRef(args.pageRoutes)
+  const routeGrantsRef = useRef(args.routeGrants)
+  /** The session that has completed a handshake, so a host rebuilt for it inherits that. */
+  const establishedSessionRef = useRef<string | null>(null)
   // Read through a ref for the same reason: the host is built once per session, and a caller's
   // fresh closure every render must not tear one down and settle its pendings.
   const navigateRef = useRef(args.onNavigate)
+  const externalLinkRef = useRef(args.onExternalLink)
+  const nativeVerbRef = useRef(args.serveNativeVerb)
+  const navigateBackRef = useRef(args.onNavigateBack)
   const storageWriteRef = useRef(args.onStorageWrite)
   const readStorageRef = useRef(args.readStorage)
   const pageFaultRef = useRef(args.onPageFault)
@@ -102,20 +118,28 @@ export function useMobileWebShellBridge(args: {
   useLayoutEffect(() => {
     routeRef.current = args.route
     pageRoutesRef.current = args.pageRoutes
+    routeGrantsRef.current = args.routeGrants
     navigateRef.current = args.onNavigate
+    externalLinkRef.current = args.onExternalLink
+    nativeVerbRef.current = args.serveNativeVerb
+    navigateBackRef.current = args.onNavigateBack
     storageWriteRef.current = args.onStorageWrite
     readStorageRef.current = args.readStorage
     pageFaultRef.current = args.onPageFault
     pageReadyRef.current = args.onPageReady
     routeRefusedRef.current = args.onRouteRefused
   }, [
+    args.onExternalLink,
+    args.serveNativeVerb,
     args.onNavigate,
+    args.onNavigateBack,
     args.onPageFault,
     args.onPageReady,
     args.onRouteRefused,
     args.onStorageWrite,
     args.readStorage,
     args.pageRoutes,
+    args.routeGrants,
     args.route
   ])
   const snapshot = args.snapshot
@@ -132,10 +156,13 @@ export function useMobileWebShellBridge(args: {
       sessionId,
       route: routeRef.current,
       pageRoutes: pageRoutesRef.current,
+      routeGrants: routeGrantsRef.current,
+      sessionEstablished: establishedSessionRef.current === sessionId,
       onPageFault: (error) => {
         pageFaultRef.current(error)
       },
       onPageReady: () => {
+        establishedSessionRef.current = sessionId
         pageReadyRef.current()
       },
       onRouteRefused: (issue) => {
@@ -144,6 +171,11 @@ export function useMobileWebShellBridge(args: {
       onNavigate: (href) => {
         navigateRef.current(href)
       },
+      onNavigateBack: () => navigateBackRef.current(),
+      onExternalLink: (url) => {
+        externalLinkRef.current(url)
+      },
+      serveNativeVerb: (verb, params) => nativeVerbRef.current(verb, params),
       host: snapshot.host,
       readStorage: () => readStorageRef.current(),
       onStorageWrite: (key, value) => {
