@@ -177,14 +177,69 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * `src/mobile-web-shell/bridge/bridge-audio-verbs.ts` — and eight vendored ones leave, because the
  * capture seam is what stops the page importing a microphone it does not have. Five are
  * `@orca/expo-two-way-audio` (its web module, `core`, `events`, `hooks` and the index) and three
- * are `expo-keep-awake`; the page asks the shell for both over `native.audio.start|read|stop` and
- * `native.wakelock.set` instead. The native halves of the seam resolve out of this closure
- * entirely, which is the -8 + 3.
+ * are `expo-keep-awake`; the page asks the shell for the microphone over
+ * `native.audio.start|read|stop` instead, and never asks about the screen at all — an open mic
+ * holds it on the device side. The native halves of the seam resolve out of this closure entirely,
+ * which is the -8 + 3.
  *
  * Measured, not derived: `mobile-web-app-session-dictation-capture.test.mjs` moves the web file
  * aside and walks the closure again, which puts those eight back.
+ *
+ * C7.7 registers the route and adds one more: the walk now enters through
+ * `app/h/[hostId]/session/[worktreeId].web.tsx` rather than the native switch, and reaches
+ * `src/session/MobileSessionRouteScreen.tsx` under it — the route file is one input either way and
+ * the component is the one that is new.
+ *
+ * The number below is re-measured rather than summed, which is what the reading above kept having
+ * to do: C7.7 measured 4,328 -> 4,329 against `23207bfde2` and item D measured 4,328 -> 4,323
+ * against a different base, and neither side's arithmetic survives the other. The merge with main
+ * read 4,324 modules and 982 local — one more than the 4,323 / 981 item D pinned, and that one is
+ * C7.7's route body, read out of `ROUTE_ENTRY` below by name rather than inferred.
+ *
+ * Round 1 re-measured it at 4,326 / 984. The two were named rather than counted:
+ * `notification-pane-tab.ts`, which both siblings of the pane hook read (a `.web.ts` cannot import
+ * its native neighbour by the plain path — the bundler answers with itself), and
+ * `bridge-init-route.ts`, the route half of `init` split out of an envelope that was at its line
+ * cap. The pane hook's own web sibling replaces the native file rather than joining it, so it
+ * costs nothing.
+ *
+ * Ruling 34 measures 4,330 / 988, and the four are named the same way. `bridge-frame-fields.ts`
+ * and `bridge-notify-envelope.ts` are the two halves an envelope back at its line cap was split
+ * into; the page-to-shell union in the second names the param the page may erase, which is
+ * declared beside the route-update accept, so `bridge-route-update.ts` and the
+ * `shell-screen-route.ts` it reads a route key from now enter through the envelope as well. All
+ * four are schema and string constants: the closure grew, the download did not gain a package.
+ *
+ * Main measures 4,333 at `3cfb070294`: #21924 (`2739246058`) turned `agent-session-wire.ts`'s
+ * type-only import of `agent-session-record` into a value import, so `src/shared/agent-session-record.ts`
+ * and the two it reaches, `agent-session-conversation-name.ts` and `surrogate-safe-text-slice.ts`,
+ * entered the page bundle between C7.7's measurement on `f07bf8544c` and its merge. Named by
+ * diffing the closure at `f07bf8544c` against `2739246058`; nothing on the C7.7 side moved.
+ *
+ * Then ruling 36 gave the screen to the microphone and two local modules left:
+ * `src/hooks/mobile-dictation-keep-awake.ts` and
+ * `src/hooks/mobile-dictation-foreground-keep-awake.ts`, the page's wake-tag owner and its Android
+ * foreground re-acquire. Both are deleted rather than moved — the device module that opens the
+ * microphone takes the screen and gives it back — so the page has nothing left to own.
+ *
+ *   modules        4333 -> 4331   (-2)
+ *   local modules   991 ->  989   (-2)
+ *
+ * Measured on this merge rather than subtracted from the line above, and the two local lists
+ * diffed to name the difference: those two leave and nothing joins. The same measurement, taken
+ * before #22067 landed, is how this branch read main's pin of 4,330 as three modules stale — the
+ * three the paragraph above names.
  */
-const SESSION_ROUTE_MODULES = 4323
+const SESSION_ROUTE_MODULES = 4331
+
+/** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
+const ROUTE_ENTRY = [
+  'app/h/[hostId]/session/[worktreeId].web.tsx',
+  'src/session/MobileSessionRouteScreen.tsx',
+  // Round 1's two, named for the reading above rather than left inside the total.
+  'src/session/notification-pane-tab.ts',
+  'src/mobile-web-shell/bridge/bridge-init-route.ts'
+]
 
 const artifactModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PAGE_ENGINE))
 const packageModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PACKAGE))
@@ -220,6 +275,18 @@ describeClosure(
       // document twice, once as modules and once as a string.
       expect(documentModules).not.toContain('src/terminal/document/native-document-entry.ts')
       expect(local).not.toContain('src/terminal/terminal-webview-document-script.generated.ts')
+    }, 300_000)
+
+    it('enters through the web sibling and the route body, not the switch', async () => {
+      const { local } = await mobileWebAppRouteClosure(SESSION_ROUTE)
+      for (const entry of ROUTE_ENTRY) {
+        expect(local, `${entry} is not in the closure`).toContain(entry)
+      }
+      // The switch itself is what the shell renders natively, and it reaches
+      // `MobileWebShellScreen`, whose module calls `requireNativeViewManager` at import. A closure
+      // that carried it would be a bundle that throws when the manifest imports this route.
+      expect(local).not.toContain('app/h/[hostId]/session/[worktreeId].tsx')
+      expect(local).not.toContain('src/mobile-web-shell/MobileWebShellScreen.tsx')
     }, 300_000)
 
     it('reaches the engine as one deferred module and never as part of the download', async () => {

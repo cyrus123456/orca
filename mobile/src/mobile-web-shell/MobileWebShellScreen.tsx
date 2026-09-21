@@ -9,6 +9,7 @@ import {
 import { ProtocolBlockScreen } from '../components/ProtocolBlockScreen'
 import { colors, radii, spacing, typography } from '../theme/mobile-theme'
 import type { BridgeInitRoute } from './bridge/bridge-envelope'
+import type { BridgeClearableRouteParam } from './bridge/bridge-route-update'
 import type {
   MobileWebShellFailureCause,
   MobileWebShellSessionState
@@ -130,6 +131,12 @@ export type MobileWebShellScreenProps = {
    * the negotiation falls back to, and a shell with nothing behind it would paint a blank instead.
    */
   fallback: ReactNode
+  /**
+   * The page applied a one-shot route param and asks for it to be erased (ruling 34), naming what
+   * it applied. Only a caller that put one on the route ever hears this, and the comparison is
+   * that caller's: it holds the param, and a tap that moved on since leaves a newer value there.
+   */
+  onRouteParamClear?: (param: BridgeClearableRouteParam, value: string) => void
   runtime?: MobileWebShellRuntime
 }
 
@@ -144,6 +151,7 @@ export function MobileWebShellScreen({
   hostId,
   route,
   fallback,
+  onRouteParamClear,
   runtime
 }: MobileWebShellScreenProps) {
   const insets = useSafeAreaInsets()
@@ -158,10 +166,13 @@ export function MobileWebShellScreen({
     retry,
     reportShellFailure,
     reportDocumentLoaded,
-    reportPageReady
+    reportPageReady,
+    pageReady
   } = useMobileWebShellSession({ hostId, routePathname: route.pathname, runtime })
-  const { snapshot, unreadable, readStorage, refreshStorage, writeStorage } =
-    usePageHostSnapshot(hostId)
+  const { snapshot, unreadable, readStorage, refreshStorage, writeStorage } = usePageHostSnapshot(
+    hostId,
+    route.pathname
+  )
   // Declared before the bridge so the handler it is handed already belongs to this session: the
   // media verbs hold staged files, and a registry born after the host would outlive the page.
   const serveNativeVerb = useNativeDeviceVerbs(state.kind === 'ready' ? state.sessionId : null)
@@ -183,6 +194,7 @@ export function MobileWebShellScreen({
     pageRouteGrants,
     routeGrants,
     session: state,
+    sessionEstablished: pageReady,
     snapshot,
     readStorage,
     onStorageWrite: writeStorage,
@@ -203,6 +215,9 @@ export function MobileWebShellScreen({
     onPageReady: () => {
       reportPageReady()
       void refreshStorage()
+    },
+    onRouteParamClear: (param, value) => {
+      onRouteParamClear?.(param, value)
     },
     // `document-load-failed` because that is what happens: the document loads and the page refuses
     // the session, so no tree is ever built. The refetch it costs is wasted on a route this shell
@@ -238,6 +253,17 @@ export function MobileWebShellScreen({
     // and the diagnostic beside it prints once per host.
     onBinaryFramesDropped: reportDroppedBinaryFrames
   })
+
+  // A route that moved under a screen that stayed mounted: the session switch keeps `paneKey` out
+  // of its key so a notification tap for another pane is a tab switch rather than a page reload,
+  // and this is how the page hears about it. Nothing is tracked here — which route the page has,
+  // and which one is still owed it, belong to the host, which outlives any one run of this effect.
+  // All this says is what the screen is on now: a route that did not move is dropped there, and a
+  // frame in flight when this re-runs is not disturbed by it.
+  const publishRoute = bridge.publishRoute
+  useEffect(() => {
+    publishRoute(route)
+  }, [publishRoute, route])
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in
   // `ready` behind an un-hidden view with nothing serving it and the page asking forever.
