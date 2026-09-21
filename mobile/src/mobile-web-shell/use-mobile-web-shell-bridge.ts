@@ -6,6 +6,7 @@ import type {
 import { useHostClient } from '../transport/client-context'
 import { createBridgeDiagnosticReporter } from './bridge-diagnostic-log'
 import type { BridgeInitRoute } from './bridge/bridge-envelope'
+import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import { createBridgeHost, type BridgeHost } from './bridge-host'
 import type { BridgeNavigateBackOutcome } from './bridge-host-contract'
 import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
@@ -61,12 +62,15 @@ export function useMobileWebShellBridge(args: {
   route: BridgeInitRoute
   /** The route patterns the page keeps for itself; everything else comes back as `navigate`. */
   pageRoutes: readonly string[]
+  pageRouteGrants: readonly { pathname: string; grants: readonly string[] }[]
   /** What this route declared, which is what `init` grants and what every grant check reads. */
   routeGrants: readonly string[]
   /** Opens a screen the page does not render, over the still-mounted view. */
   onNavigate: (href: string) => void
   /** Opens a URL outside the app, on the page's behalf. */
   onExternalLink: (url: string) => void
+  /** Plays one haptic on this device, on the page's behalf. */
+  onHaptic: (kind: BridgeHapticsKind) => void
   /** Serves one `native.` verb on this device, for a page that was granted it. */
   serveNativeVerb: (verb: BridgeNativeVerb, params: unknown) => Promise<unknown>
   /** Pops the stack this page was pushed onto, and says so when it did not. */
@@ -101,6 +105,7 @@ export function useMobileWebShellBridge(args: {
   // object in the deps would rebuild the host on every render and settle its pendings each time.
   const routeRef = useRef(args.route)
   const pageRoutesRef = useRef(args.pageRoutes)
+  const pageRouteGrantsRef = useRef(args.pageRouteGrants)
   const routeGrantsRef = useRef(args.routeGrants)
   /** The session that has completed a handshake, so a host rebuilt for it inherits that. */
   const establishedSessionRef = useRef<string | null>(null)
@@ -108,6 +113,7 @@ export function useMobileWebShellBridge(args: {
   // fresh closure every render must not tear one down and settle its pendings.
   const navigateRef = useRef(args.onNavigate)
   const externalLinkRef = useRef(args.onExternalLink)
+  const hapticRef = useRef(args.onHaptic)
   const nativeVerbRef = useRef(args.serveNativeVerb)
   const navigateBackRef = useRef(args.onNavigateBack)
   const storageWriteRef = useRef(args.onStorageWrite)
@@ -121,9 +127,11 @@ export function useMobileWebShellBridge(args: {
   useLayoutEffect(() => {
     routeRef.current = args.route
     pageRoutesRef.current = args.pageRoutes
+    pageRouteGrantsRef.current = args.pageRouteGrants
     routeGrantsRef.current = args.routeGrants
     navigateRef.current = args.onNavigate
     externalLinkRef.current = args.onExternalLink
+    hapticRef.current = args.onHaptic
     nativeVerbRef.current = args.serveNativeVerb
     navigateBackRef.current = args.onNavigateBack
     storageWriteRef.current = args.onStorageWrite
@@ -135,6 +143,7 @@ export function useMobileWebShellBridge(args: {
   }, [
     args.onBinaryFramesDropped,
     args.onExternalLink,
+    args.onHaptic,
     args.serveNativeVerb,
     args.onNavigate,
     args.onNavigateBack,
@@ -144,6 +153,7 @@ export function useMobileWebShellBridge(args: {
     args.onStorageWrite,
     args.readStorage,
     args.pageRoutes,
+    args.pageRouteGrants,
     args.routeGrants,
     args.route
   ])
@@ -161,6 +171,7 @@ export function useMobileWebShellBridge(args: {
       sessionId,
       route: routeRef.current,
       pageRoutes: pageRoutesRef.current,
+      pageRouteGrants: pageRouteGrantsRef.current,
       routeGrants: routeGrantsRef.current,
       sessionEstablished: establishedSessionRef.current === sessionId,
       onPageFault: (error) => {
@@ -182,6 +193,9 @@ export function useMobileWebShellBridge(args: {
       onNavigateBack: () => navigateBackRef.current(),
       onExternalLink: (url) => {
         externalLinkRef.current(url)
+      },
+      onHaptic: (kind) => {
+        hapticRef.current(kind)
       },
       serveNativeVerb: (verb, params) => nativeVerbRef.current(verb, params),
       host: snapshot.host,

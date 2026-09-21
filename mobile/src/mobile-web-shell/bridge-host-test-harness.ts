@@ -8,6 +8,7 @@ import {
 } from './bridge-host-test-fakes'
 import { createBridgeHost, type BridgeHost, type BridgeHostDiagnostic } from './bridge-host'
 import type { BridgeNavigateBackOutcome } from './bridge-host-contract'
+import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import { MOBILE_WEB_SHELL_GRANTS } from './page-route-policy'
 import {
   BRIDGE_NATIVE_VERBS,
@@ -35,6 +36,8 @@ export type Harness = {
   navigations: string[]
   /** Every URL the page asked the shell to open outside the app, in order. */
   externalLinks: string[]
+  /** Every haptic the page asked the shell to play, in order. */
+  haptics: BridgeHapticsKind[]
   /** Every text the page wrote to the pasteboard through a native verb, in order. */
   clipboardWrites: string[]
   /** One entry per `navigate-back` the host answered, in order, with what the shell did. */
@@ -49,6 +52,11 @@ export type Harness = {
 
 export const ROUTE = { pathname: '/h/host-a' }
 export const PAGE_ROUTES = ['/h/[hostId]']
+/** What those patterns declared, as the manifest would carry it, `haptics` included: it is on every
+ *  real entry, so a pair without it is a shape the host never receives. */
+export const PAGE_ROUTE_GRANTS = [
+  { pathname: '/h/[hostId]', grants: ['navigate', 'storage', 'haptics'] }
+]
 export const HOST = { id: 'host-a', name: 'Host A', endpoint: 'ws://host-a', lastConnected: 5 }
 
 export function harness(
@@ -69,6 +77,8 @@ export function harness(
      */
     /** What the mounted route declared; everything this shell implements unless a case narrows it. */
     routeGrants?: readonly string[]
+    /** The manifest pairs this shell would send; a case may hand it a malformed one. */
+    pageRouteGrants?: readonly { pathname: string; grants: readonly string[] }[]
     /** Stands for a host rebuilt under a page whose session already handshook. */
     sessionEstablished?: boolean
     ready?: boolean
@@ -85,6 +95,7 @@ export function harness(
   const diagnostics: BridgeHostDiagnostic[] = []
   const navigations: string[] = []
   const externalLinks: string[] = []
+  const haptics: BridgeHapticsKind[] = []
   const clipboardWrites: string[] = []
   const backPops: BridgeNavigateBackOutcome[] = []
   const storageWrites: { key: string; value: string | null }[] = []
@@ -102,6 +113,7 @@ export function harness(
     sessionId: 'session-a',
     route: options.route ?? ROUTE,
     pageRoutes: PAGE_ROUTES,
+    pageRouteGrants: options.pageRouteGrants ?? PAGE_ROUTE_GRANTS,
     routeGrants: options.routeGrants ?? MOBILE_WEB_SHELL_GRANTS,
     sessionEstablished: options.sessionEstablished ?? false,
     host: HOST,
@@ -113,6 +125,7 @@ export function harness(
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
     onExternalLink: (url) => externalLinks.push(url),
+    onHaptic: (kind) => haptics.push(kind),
     serveNativeVerb: (verb, params) => {
       if (options.serveNativeVerb !== undefined) {
         return options.serveNativeVerb(verb, params)
@@ -159,6 +172,7 @@ export function harness(
     droppedBinaryFrames,
     navigations,
     externalLinks,
+    haptics,
     clipboardWrites,
     backPops,
     storageWrites,

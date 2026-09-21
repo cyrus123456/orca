@@ -2,6 +2,7 @@ import type { TerminalBacklogEnd, TerminalBacklogTimers } from './bridge-termina
 import type { RpcClient } from '../transport/rpc-client'
 import type { BridgeRefusal } from './bridge/bridge-caps'
 import type { BridgeInitHost, BridgeInitRoute } from './bridge/bridge-envelope'
+import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import type { BridgeNotifyRefusal } from './bridge/bridge-notify-grants'
@@ -84,6 +85,14 @@ export type BridgeHostOptions = {
   /** Every route pattern the shell would render from the page, so the page knows what to keep. */
   pageRoutes: readonly string[]
   /**
+   * What each of those patterns declared, from the manifest this shell already holds.
+   *
+   * The page decides an in-page hop with it: a push is kept local only when the target's grants are
+   * covered by this session's. Optional, because a shell with no manifest entry for a pattern has
+   * nothing to say about it and the page then keeps its old rule.
+   */
+  pageRouteGrants?: readonly { pathname: string; grants: readonly string[] }[]
+  /**
    * What the route this session was opened for declared, narrowed to what this shell implements.
    *
    * This is the session's whole capability, not the app's: `init` grants exactly these plus the
@@ -134,6 +143,16 @@ export type BridgeHostOptions = {
    * failed is invisible on both sides unless the caller says so.
    */
   onExternalLink: (url: string) => void
+  /**
+   * Plays one haptic on this device. Required for the reason `onExternalLink` is: the `haptics`
+   * grant is issued on the strength of this existing.
+   *
+   * Injected rather than called here, as every other device-local notify is: a static import of the
+   * app's haptics would put `react-native` and `expo-haptics` in this module's graph, and the host
+   * is the protocol's half of the bridge on either. It must not throw — this runs on the native
+   * frame handler — and it owes the page nothing, which is why a notify rather than a verb.
+   */
+  onHaptic: (kind: BridgeHapticsKind) => void
   /**
    * Pops the native stack this page was pushed onto. Required for the reason `onNavigate` is: the
    * `navigate` grant carries this verb too, and a page told it may hand its Back button over and

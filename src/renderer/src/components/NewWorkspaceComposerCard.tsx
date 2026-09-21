@@ -540,7 +540,7 @@ export default function NewWorkspaceComposerCard({
       onDragEnter={dragHandlers.onDragEnter}
       onDragLeave={dragHandlers.onDragLeave}
       className={cn(
-        'grid min-w-0 gap-1 rounded-md transition',
+        'flex min-h-0 min-w-0 flex-1 flex-col gap-1 rounded-md transition',
         isFileDragOver && 'ring-2 ring-ring/30',
         containerClassName
       )}
