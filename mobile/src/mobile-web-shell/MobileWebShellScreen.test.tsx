@@ -2,7 +2,10 @@ import { createElement } from 'react'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { FakeRpcClient } from './bridge-host-test-fakes'
-import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
+import type {
+  MobileWebShellSessionState,
+  MobileWebShellUpdateNotice
+} from './mobile-web-shell-session-contract'
 
 type ScreenDependencies = {
   retry: Mock
@@ -28,10 +31,14 @@ type ScreenDependencies = {
   /** Whether the view refuses what it is handed, which is a page the post never reached. */
   postFails: boolean
   state: MobileWebShellSessionState
+  /** Non-null when the generation on screen is a fallback from an update the shell refused. */
+  updateNotice: MobileWebShellUpdateNotice | null
   /** What the session reducer says about the page's handshake; true only for the fence's case. */
   pageReady: boolean
   /** Null for every case but the bridge's: with no client the hook builds no host at all. */
   client: FakeRpcClient | null
+  /** The IME events the app's own keyboard seam subscribes to, by name. */
+  keyboardListeners: Map<string, (event: { endCoordinates: { height: number } }) => void>
 }
 
 const SNAPSHOT = vi.hoisted(() => ({
@@ -68,13 +75,24 @@ const dependencies = vi.hoisted((): ScreenDependencies => {
     posted: [],
     postFails: false,
     state: { kind: 'checking' },
+    updateNotice: null,
     pageReady: false,
-    client: null
+    client: null,
+    keyboardListeners: new Map()
   }
 })
 
 vi.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
+  Keyboard: {
+    addListener: (
+      name: string,
+      listener: (event: { endCoordinates: { height: number } }) => void
+    ) => {
+      dependencies.keyboardListeners.set(name, listener)
+      return { remove: () => dependencies.keyboardListeners.delete(name) }
+    }
+  },
   Linking: { openURL: dependencies.openUrl },
   Platform: { OS: 'ios' },
   Pressable: 'Pressable',
@@ -122,6 +140,7 @@ vi.mock('expo-file-system', () => ({
   },
   Paths: { cache: 'file:///cache' }
 }))
+vi.mock('lucide-react-native', () => ({ X: 'Icon' }))
 vi.mock('react-native-safe-area-context', () => ({
   useSafeAreaInsets: () => ({ bottom: 8, left: 0, right: 0, top: 44 })
 }))
@@ -199,6 +218,7 @@ vi.mock('./use-mobile-web-shell-session', () => ({
     state: dependencies.state,
     pageRoutes: dependencies.pageRoutes,
     routeGrants: dependencies.routeGrants,
+    updateNotice: dependencies.updateNotice,
     retry: dependencies.retry,
     reportShellFailure: dependencies.reportShellFailure,
     reportDocumentLoaded: dependencies.reportDocumentLoaded,
@@ -317,6 +337,7 @@ beforeEach(() => {
   dependencies.openUrl.mockImplementation(() => Promise.resolve(true))
   dependencies.canGoBack = true
   dependencies.pathname = '/h/host-1'
+  dependencies.updateNotice = null
 })
 
 describe('the hybrid shell screen', () => {
@@ -800,6 +821,74 @@ describe('the dropped-frame count on the dev facts line', () => {
 })
 
 /**
+ * An update the session refused, over a workspace the session opened anyway.
+ *
+ * The decision is the reducer's; what this pins is that the screen keeps the two apart — the
+ * refusal is a line above the page, so a dismissed notice leaves the same document mounted rather
+ * than reloading it, and the copy claims only what happened.
+ */
+describe('a refused update is said beside the page, not in front of it', () => {
+  function dismissControl(tree: ReactTestRenderer): ReactTestInstance | undefined {
+    return byName(tree, 'Pressable').find(
+      (node) => node.props.accessibilityLabel === 'Dismiss notice'
+    )
+  }
+
+  it('serves the page and says the update did not happen, promising no retry', async () => {
+    dependencies.updateNotice = 'update-failed'
+    const tree = await render(readyState('session-one'))
+    expect(byName(tree, 'ShellViewProbe')).toHaveLength(1)
+    const text = textOf(tree)
+    expect(text).toContain("Couldn't update the workspace from this host")
+    expect(text).toContain('Showing the last version that worked')
+    expect(text).not.toContain('Try again')
+  })
+
+  it('carries the notice to a reader who never arrives at the top of the page', async () => {
+    // The banner is inserted into a screen already on screen. Assertive because the shell passes
+    // the failure tone: what it reports is an update that did not happen.
+    dependencies.updateNotice = 'update-failed'
+    const tree = await render(readyState('session-one'))
+    const alert = byName(tree, 'View').find((node) => node.props.accessibilityRole === 'alert')
+    expect(alert).toBeDefined()
+    expect(alert?.props.accessibilityLiveRegion).toBe('assertive')
+  })
+
+  it('says nothing when the generation on screen is the one the host serves', async () => {
+    const tree = await render(readyState('session-one'))
+    expect(dismissControl(tree)).toBeUndefined()
+    expect(textOf(tree)).not.toContain("Couldn't update")
+  })
+
+  it('keeps the same document mounted when the notice is dismissed', async () => {
+    dependencies.updateNotice = 'update-failed'
+    const tree = await render(readyState('session-one'))
+    dependencies.lifecycle.length = 0
+    await act(async () => {
+      dismissControl(tree)?.props.onPress()
+    })
+    expect(dismissControl(tree)).toBeUndefined()
+    expect(textOf(tree)).not.toContain("Couldn't update")
+    // The page is the point: a notice that reloaded the workspace to get out of the way would
+    // cost the user exactly what the fallback was for.
+    expect(byName(tree, 'ShellViewProbe')).toHaveLength(1)
+    expect(dependencies.lifecycle).toEqual([])
+  })
+
+  it('shows a later refusal rather than staying dismissed for the rest of the host', async () => {
+    dependencies.updateNotice = 'update-failed'
+    const tree = await render(readyState('session-one'))
+    await act(async () => {
+      dismissControl(tree)?.props.onPress()
+    })
+    // The next flow refused too, and opened its own fallback: a new document, so the tap on the
+    // one before it is not an answer about this one.
+    await update(tree, readyState('session-two'))
+    expect(dismissControl(tree)).toBeDefined()
+  })
+})
+
+/**
  * Last in the file on purpose: it is the case the block above would have poisoned.
  *
  * Those cases grant the screencast lane and install a client, and before the shared setup reset
@@ -812,5 +901,24 @@ describe('what one case mutates does not reach the next', () => {
       grants: DEFAULT_ROUTE_GRANTS,
       client: null
     })
+  })
+
+  it('shortens the view by the keyboard, which is the only side that can see one', async () => {
+    // Edge-to-edge makes the manifest's `adjustResize` inert, so the window never shrinks and the
+    // page's `visualViewport` reads full height with the IME up: it lays its live input row out
+    // under the keys. The shell owns the window, so it takes the strip off the view instead.
+    const tree = await render(readyState('session-keyboard'))
+    const root = tree.root.find((node) => node.props.testID === 'mobile-web-shell-ready')
+    expect(root.props.style[1]).toEqual({ paddingTop: 44, paddingBottom: 8 })
+
+    await act(async () => {
+      dependencies.keyboardListeners.get('keyboardWillShow')?.({ endCoordinates: { height: 336 } })
+    })
+    expect(root.props.style[1]).toEqual({ paddingTop: 44, paddingBottom: 336 })
+
+    await act(async () => {
+      dependencies.keyboardListeners.get('keyboardWillHide')?.({ endCoordinates: { height: 0 } })
+    })
+    expect(root.props.style[1]).toEqual({ paddingTop: 44, paddingBottom: 8 })
   })
 })
