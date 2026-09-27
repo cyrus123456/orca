@@ -8,9 +8,13 @@ const workflow = readWorkflow('ci-cache-warmup')
 const steps = workflow.jobs.warm.steps
 
 it('warms the same Linux Node runtime the PR shards restore', () => {
-  const install = steps.find((step) => step.uses === './.github/actions/install-node-dependencies')
+  const arm = workflow.jobs['warm-linux-arm']
+  const install = arm.steps.find(
+    (step) => step.uses === './.github/actions/install-node-dependencies'
+  )
   const primer = readWorkflow('pr').jobs.test_native_cache
-  expect(workflow.jobs.warm['runs-on']).toBe(primer['runs-on'])
+  expect(arm['runs-on']).toBe(primer['runs-on'])
+  expect(arm.steps.at(-1).run).toBe('node config/scripts/ensure-native-runtime.mjs --check-only')
   expect(install.with).toEqual(primer.steps.find((step) => step.uses === install.uses).with)
 })
 
@@ -28,7 +32,12 @@ it('publishes incremental state under a key and prefix that new PRs restore', ()
 })
 
 it('bounds warming to the required platforms and validates changes without granting writes', () => {
-  expect(Object.keys(workflow.jobs)).toEqual(['warm', 'warm-windows'])
+  expect(Object.keys(workflow.jobs)).toEqual([
+    'warm',
+    'warm-linux-arm',
+    'warm-windows',
+    'warm-linux-package-fixtures'
+  ])
   expect(workflow.jobs.warm['timeout-minutes']).toBeLessThanOrEqual(10)
   expect(workflow.permissions).toEqual({ contents: 'read' })
   expect(workflow.on.push.branches).toEqual(['main'])

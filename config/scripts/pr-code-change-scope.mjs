@@ -113,6 +113,9 @@ const ORCAD_BROWSER_PREFIXES = [
 // import, and the shell policy the render check runs the page under.
 const MOBILE_WEB_APP_PREFIXES = [
   'config/scripts/build-mobile-web-app',
+  'config/scripts/run-mobile-web-app-checks',
+  'config/scripts/script-child-process.mjs',
+  'src/shared/child-process/',
   'config/scripts/verify-mobile-web-app-bundle',
   'config/scripts/mobile-web-app-',
   'config/scripts/mobile-web-bundle-',
@@ -217,6 +220,10 @@ const SHARED_PACKAGE_PREFIXES = [
 
 const LINUX_PACKAGE_PREFIXES = [
   ...SHARED_PACKAGE_PREFIXES,
+  'config/scripts/package-linux-formats',
+  'config/scripts/script-child-process.mjs',
+  'config/scripts/space-sharing-copy.mjs',
+  '.github/actions/prepare-linux-package-fixture/',
   'config/docker/cli-launch-contract/',
   'config/docker/headless-pairing/',
   'config/docker/headless-serve-shutdown/',
