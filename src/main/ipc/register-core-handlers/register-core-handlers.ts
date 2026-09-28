@@ -206,7 +206,7 @@ export function registerCoreHandlers(
   registerShellHandlers(store)
   registerIconImagePickerHandlers()
   registerPetHandlers()
-  registerSessionHandlers(store)
+  registerSessionHandlers(store, runtime)
   registerUIHandlers(store, { isDashboardPopoutRenderer })
   registerEmulatorFrameStreamHandlers()
   registerEmulatorVideoStreamHandlers()
