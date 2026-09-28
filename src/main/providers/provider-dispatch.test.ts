@@ -49,7 +49,16 @@ vi.mock('node-pty', () => ({
 }))
 
 vi.mock('../opencode/hook-service', () => ({
-  openCodeHookService: { buildPtyEnv: () => ({}), clearPty: vi.fn() }
+  openCodeHookService: {
+    buildPtyEnv: () => ({}),
+    refreshLegacySharedPlugin: vi.fn(),
+    clearPty: vi.fn()
+  },
+  openCode2HookService: {
+    buildPtyEnv: () => ({}),
+    refreshLegacySharedPlugin: vi.fn(),
+    clearPty: vi.fn()
+  }
 }))
 
 vi.mock('../pi/titlebar-extension-service', () => ({
@@ -109,6 +118,7 @@ describe('PTY provider dispatch', () => {
       getCwd: vi.fn(),
       getInitialCwd: vi.fn(),
       clearBuffer: vi.fn(),
+      resetInputModes: vi.fn(),
       acknowledgeDataEvent: vi.fn(),
       hasChildProcesses: vi.fn(),
       getForegroundProcess: vi.fn(),
