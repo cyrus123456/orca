@@ -446,6 +446,9 @@ export function AgentsPane({
         wslCapabilitiesLoading={wslCapabilitiesLoading}
       />
       <AgentStatusHooksSetting settings={settings} updateSettings={updateSettings} />
+      {!isPairedWebClientWindow() ? (
+        <AgentWorkspaceTrustSetting settings={settings} updateSettings={updateSettings} />
+      ) : null}
       <AgentGeneratedTabTitlesSetting settings={settings} updateSettings={updateSettings} />
       {!isPairedWebClientWindow() ? (
         <AgentAwakeSetting settings={settings} updateSettings={updateSettings} />
@@ -874,6 +877,21 @@ export function AgentStatusHooksSetting({
         checked={enabled}
         onChange={() => updateSettings({ agentStatusHooksEnabled: !enabled })}
         ariaLabel={getAgentStatusHooksTitle()}
+      />
+    </section>
+  )
+}
+
+export function AgentWorkspaceTrustSetting({ settings, updateSettings }: AgentsPaneProps) {
+  const enabled = settings.agentWorkspaceTrustEnabled !== false
+  return (
+    <section className="space-y-3">
+      <SettingsSwitchRow
+        label={getAgentWorkspaceTrustTitle()}
+        description={getAgentWorkspaceTrustDescription()}
+        checked={enabled}
+        onChange={() => updateSettings({ agentWorkspaceTrustEnabled: !enabled })}
+        ariaLabel={getAgentWorkspaceTrustTitle()}
       />
     </section>
   )
