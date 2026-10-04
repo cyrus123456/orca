@@ -12,7 +12,7 @@ import {
 import { translate } from '@/i18n/i18n'
 
 type TerminalTabLeadingIconProps = {
-  agent: TuiAgent | null
+  agent: TerminalAgent | null
   activityStatus: TerminalTabActivityStatus
   shell: TerminalTab['shellOverride']
   showUnreadActivity: boolean
