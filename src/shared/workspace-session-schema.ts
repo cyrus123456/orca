@@ -11,6 +11,7 @@
  * survives, because one bad tab record must not cost every worktree its state.
  * Only a payload that is not a session at all falls back to defaults.
  */
+import { agentLaunchPaneOnTabSchema } from './agent-launch-pane-verdict'
 import { z } from 'zod'
 import type { TerminalPaneLayoutNode, WorkspaceKey, WorkspaceSessionState } from './types'
 import { executionHostIdSchema } from './execution-host'

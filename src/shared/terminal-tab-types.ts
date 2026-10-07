@@ -1,5 +1,6 @@
 import type { AiVaultSessionTitle } from './ai-vault-session-title'
 import type { TuiAgent } from './tui-agent'
+import type { AgentLaunchPaneOutcome } from './agent-launch-pane-verdict'
 
 /** Why recovery reasons live in the shared row type: the tab row carries the
  *  recovery ledger, and the ledger records which reason it last acted on. */
