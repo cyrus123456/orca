@@ -52,6 +52,7 @@ import {
   type NeedsProjectHostOption
 } from './new-workspace/new-workspace-composer-card-props'
 import { getSshStatusLabel } from './new-workspace/new-workspace-composer-ssh-status'
+import { useNewWorkspaceComposerFileDrop } from './new-workspace/use-new-workspace-composer-file-drop'
 import { useComposerFileDragOver } from './new-workspace/use-composer-file-drag-over'
 
 type RepoOption = React.ComponentProps<typeof RepoCombobox>['repos'][number]
@@ -296,6 +297,12 @@ export default function NewWorkspaceComposerCard({
   // Why: subscribe (form uses translate() directly) so an open create dialog repaints when the UI language changes.
   useTranslation()
   const { isFileDragOver, dragHandlers } = useComposerFileDragOver()
+  const attachDropOwner = useNewWorkspaceComposerFileDrop({
+    projectPath: props.selectedRepoPath,
+    hostId: selectedRepoExecutionHostId,
+    connectionId: props.selectedRepoConnectionId,
+    applyDrop: props.onNativeFileDrop
+  })
   const openModal = useAppStore((state) => state.openModal)
   const activeModal = useAppStore((state) => state.activeModal)
   const defaultTuiAgent = useAppStore((state) => state.settings?.defaultTuiAgent ?? null)
@@ -433,12 +440,13 @@ export default function NewWorkspaceComposerCard({
       if (!node) {
         cancelNameInputFocusFrame()
       }
+      attachDropOwner(node)
       if (composerRef) {
         composerRef.current = node
       }
       onComposerNodeChange?.(node)
     },
-    [cancelNameInputFocusFrame, composerRef, onComposerNodeChange]
+    [attachDropOwner, cancelNameInputFocusFrame, composerRef, onComposerNodeChange]
   )
   const focusNameInput = React.useCallback((): void => {
     cancelNameInputFocusFrame()
@@ -538,12 +546,15 @@ export default function NewWorkspaceComposerCard({
       ref={setComposerNode}
       data-workspace-composer-root="true"
       data-sparse-preset-editing={sparseEditing ? 'true' : undefined}
-      data-native-file-drop-target="composer"
       onDragEnter={dragHandlers.onDragEnter}
       onDragLeave={dragHandlers.onDragLeave}
       className={cn(
         'flex min-h-0 min-w-0 flex-1 flex-col gap-1 rounded-md transition',
-        isFileDragOver && 'ring-2 ring-ring/30',
+        isFileDragOver &&
+          props.selectedRepoPath &&
+          selectedRepoExecutionHostId &&
+          props.onNativeFileDrop &&
+          'ring-2 ring-ring/30',
         containerClassName
       )}
     >
